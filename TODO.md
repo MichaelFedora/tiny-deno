@@ -12,3 +12,4 @@
 - add "secure" context, which is defined as a `context: 'secure', identifier: 'scope/hash'` and would require
 a third party to verify, e.g. the blockchain. Should be implemented in the auth module
   - this should also provide a secure/private appdata folder which cannot be accessed by any other app (instead of generic folders)
+- make file api have locks and etag/version checks for race conditions (similar to gaia)

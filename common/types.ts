@@ -2,15 +2,93 @@ import { RequestStub } from '../api/types.ts';
 
 // Auth Stubs
 
+/**
+ * A user.
+ */
 export interface User {
+  /**
+   * The user's ID
+   */
   id?: string;
+
+  /**
+   * The user's human-friendly identifier.
+   *
+   * Must be unique within the database.
+   */
   readonly username: string;
 }
 
+/**
+ * @summary An authenticated session.
+ *
+ * @description
+ * An authenticated session, as given by apps or users, delineated by `context`.
+ *
+ * If `context` is **NOT** `'secure'`, then `identifier` is a username. Otherwise, it is
+ * a secure hash.
+ *
+ * For the following definitions:
+ * - {app} is the context when it is not `'secure'` or `'user'`
+ * - {userId} is associated user's ID
+ * - {hash} is the identifier when the context is `'secure'`
+ *
+ * A session should provide access to context-defined folders:
+ * - if app: `/{userId}/appdata/{app}` and `/{userId}/public/appdata/{app}`
+ * - if user: `/{userId}`
+ * - if secure: `/{userId}/secure/{hash}` and `/{userId}/public/secure/{hash}`
+ *
+ * It should also provide access to the requested collection folders:
+ * - `/{userId}/collections/{path}`, where `{path}` is an entry in the `collections` array.
+ *
+ * It should provide access to a key-value database with the following prefix (replace `!` with the
+ * database-defined separator):
+ * - if app: `{userId}!{app}`
+ * - if user: `{userId}`
+ * - if secure: `{userId}!secure!{hash}`
+ *
+ * It should provide access to the dynamic table database for the following identifier (replace `!` with
+ * the database-defined separator)
+ * - if app: `{userId}!{app}`
+ * - if user: `{userId}`
+ * - if secure: `{userId}!secure!{hash}`
+ *
+ * It should provide an inbox to the with a standard route of `/:context/:identifier/inbox`
+ *
+ * It should provide an out with the standard route of `/:context/:identifier/outbox`
+ *
+ * *If secure*, it should provide a custom-api route with the parent route `/secure/:hash/api`
+ */
 export interface Session {
+  /**
+   * The session ID
+   */
   id?: string;
+
+  /**
+   * The user ID that this session is associated with.
+   */
   user: string;
-  scopes: readonly string[];
+
+  /**
+   * The authentication context this session has.
+   *
+   * Can be: 'user', 'secure', or an app domain.
+   */
+  context: 'user' | 'secure' | string;
+
+  /**
+   * A Username (if context is `'user'` or an app domain)
+   * or a Secure Hash (if context is `'secure'`).
+   */
+  identifier: string;
+
+  /**
+   * A list of paths to shared collections.
+   *
+   * They resolve to `/collections/{path}`.
+   */
+  collections: readonly string[];
 }
 
 // Tiny Api
@@ -23,7 +101,7 @@ export interface TinyRequest extends RequestStub {
   // deno-lint-ignore no-explicit-any
   json(): Promise<any>;
   text(): Promise<string>;
-  stream(): Promise<ReadableStream<Uint8Array> | null>;
+  readonly stream: ReadableStream<Uint8Array> | null;
 
   // BONUS (tiny)
 

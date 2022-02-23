@@ -1,5 +1,5 @@
 import { TinyError, ErrorTypes } from '../common/errors.ts';
-import { RouteHandler } from '../api/types.ts';
+import { SlimRequestStub, SlimRouteHandler } from '../api/types.ts';
 
 const trueArray = Object.freeze(['true', '1', 'yes']);
 
@@ -12,7 +12,7 @@ export function parseTrue(query: unknown): boolean {
  * @param action The action we are handling an error for
  * @returns {async (req, next) => Promise<Response>} Error handling Middleware
  */
-export function handleError(action: string): RouteHandler {
+export function handleError<R extends SlimRequestStub>(action: string): SlimRouteHandler<R> {
   return async function(_req, next) {
     try {
       return await next();

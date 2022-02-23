@@ -1,13 +1,13 @@
-import { RequestStub, RouteHandler } from './types.ts';
+import { SlimRequestStub, RequestStub, RouteHandler } from './types.ts';
 
 /**
  * A step on the path of the router
  */
 interface RouteStep<Req extends RequestStub = RequestStub> {
-  /** The route */
+  /** The route (pathname) */
   route: string;
   /** What request method to limit to; empty for USE, as we do not limit for that */
-  type?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  type?: 'HEAD' | 'OPTIONS' | 'GET' | 'POST' | 'PUT' | 'DELETE';
   /** The route handler (or router) */
   handler: Router<Req> | RouteHandler<Req>;
 }
@@ -75,7 +75,7 @@ export class Router<Req extends RequestStub = RequestStub> {
    * @param {string} type The route method (GET/POST/PUT/DELETE)
    * @param {Array<RouteHandler>} handlers The handlers to add to our #step array (condensed)
    */
-  #add<R extends Req = Req>(route: string, type: 'GET' | 'POST' | 'PUT' | 'DELETE', handlers: RouteHandler<R>[]): void {
+  #add<R extends Req = Req>(route: string, type: 'HEAD' | 'OPTIONS' | 'GET' | 'POST' | 'PUT' | 'DELETE', handlers: RouteHandler<R>[]): void {
 
     // enforce `/{route}` with no trailing `/`'s
     route = '/' + route.replace(/^\/+|\/+$/g, '');
@@ -85,6 +85,32 @@ export class Router<Req extends RequestStub = RequestStub> {
       type,
       handler: this.#condense(handlers)
     });
+  }
+
+  /**
+   * Add handlers to a HEAD {route} call
+   * @param {string} route The route
+   * @param {Router | RouteHandler} handler A router or route handler
+   * @param {Array<Router | RouteHandler>} handlers Any other route handlers to chain
+   * @returns {this} this
+   */
+  head<R extends Req = Req>(route: string, handler: RouteHandler<R>, ...handlers: RouteHandler<R>[]): this {
+    handlers.unshift(handler);
+    this.#add(route, 'HEAD', handlers);
+    return this;
+  }
+
+  /**
+   * Add handlers to a OPTIONS {route} call
+   * @param {string} route The route
+   * @param {Router | RouteHandler} handler A router or route handler
+   * @param {Array<Router | RouteHandler>} handlers Any other route handlers to chain
+   * @returns {this} this
+   */
+  options<R extends Req = Req>(route: string, handler: RouteHandler<R>, ...handlers: RouteHandler<R>[]): this {
+    handlers.unshift(handler);
+    this.#add(route, 'OPTIONS', handlers);
+    return this;
   }
 
   /**
@@ -146,11 +172,11 @@ export class Router<Req extends RequestStub = RequestStub> {
    * @param {string?} type The route type -- if undefined (for USE), it also matches any sub-routes
    * @returns {boolean} Whether or not it matches
    */
-  #matchRoute(url: string, route: string, type?: string): boolean {
+  #matchRoute(url: string, route: string, matchExtra?: boolean): boolean {
     let pattern = new URLPattern({ pathname: route });
     let test = pattern.test(url);
 
-    if(type || test)
+    if(!matchExtra || test)
       return test;
 
     pattern = new URLPattern({ pathname: route + '(.*)' });
@@ -165,35 +191,37 @@ export class Router<Req extends RequestStub = RequestStub> {
    * @param {string?} base The base url to append to the routes we are matching; used for sub-routers
    * @returns {Array<RouteHandler>} The path through the step list -- should be iterated through to process
    */
-  #pathfind<R extends Req = Req>(req: R, base = ''): RouteHandler<R>[] {
+  #pathfind<R extends Req = Req>(req: Partial<R> & SlimRequestStub, options?: { base?: string; matchType?: boolean }): { type: RouteStep['type'], handler: RouteHandler<R> }[] {
+    let base = options?.base ?? '';
+    const matchType = options?.matchType !== false;
 
     // enforce `/{route}` with no trailing `/`'s
     if(base)
       base = '/' + base.replace(/^\/+|\/+$/g, '');
 
-    const path: RouteHandler<R>[] = [];
+    const path: { type: RouteStep['type'], handler: RouteHandler<R> }[] = [];
 
     for(const step of this.#steps) {
       // append the base to the route and remove any trailing `/`'s for the proper route to match against
       const route = (base + step.route).replace(/\/+$/g, '');
 
-      if( (step.type && req.method !== step.type) ||
-          !this.#matchRoute(req.url, route, step.type) )
+      if( (matchType && step.type && req.method !== step.type) ||
+          !this.#matchRoute(req.url, route, !step.type) )
         continue;
 
       // move the handler into a variable in case it changes while it is being processed
       const handler = step.handler;
 
       if(handler instanceof Router)
-        path.push(...(handler as Router<R>).#pathfind(req, route));
+        path.push(...(handler as Router<R>).#pathfind(req, { base: route }));
       else {
-        path.push((req, next) => {
+        path.push({ type: step.type, handler: (req, next) => {
           // match the route params for utility reasons
-          req.params = (new URLPattern({ pathname: route + '/:else(.*)?' })).exec(req.url)?.pathname?.groups;
-          delete req.params!.else;
+          req.params = (new URLPattern({ pathname: route + '/:else(.*)?' })).exec(req.url)?.pathname?.groups ?? { };
+          delete req.params.else;
 
           return handler(req, next);
-        });
+        } });
       }
     }
 
@@ -211,9 +239,9 @@ export class Router<Req extends RequestStub = RequestStub> {
    * @returns {Promise<Response | undefined>} The response generated from the given routes,
    * or undefined if nothing was returned
    */
-  async process<R extends Req = Req>(req: R, base = ''): Promise<Response | undefined> {
+  async process<R extends Req = Req>(req: Partial<R> & SlimRequestStub, base = ''): Promise<Response | undefined> {
 
-    const path = this.#pathfind(req, base);
+    const path = this.#pathfind(req, { base });
 
     if(!path.length)
       return undefined;
@@ -222,26 +250,42 @@ export class Router<Req extends RequestStub = RequestStub> {
 
     const query = req.query;
     const params = req.params;
+    const context = req.context;
 
     // generate the query object for utility reasons
-    req.query = req.url.includes('?')
+    req.query = (req.url.includes('?')
       ? Object.fromEntries((new URLSearchParams(req.url.slice(req.url.indexOf('?')))).entries())
-      : undefined;
+      : undefined) ?? { };
+
+    req.context = { };
 
     // used to check if the chain never finished and we got "ghosted"
     const nextResponse = new Response();
 
-    const res = await this.#condense(path)(req, () => nextResponse);
+    const res = await this.#condense(path.map(p => p.handler))(req as R, () => nextResponse);
 
     // cleanup
 
     req.query = query;
     req.params = params;
+    req.context = context;
 
     if(!res || res === nextResponse)
       return undefined;
 
     return res;
+  }
+
+  parseOptions<R extends Req = Req>(req: Partial<R> & SlimRequestStub, base = ''): { methods: string } {
+    const path = this.#pathfind(req, { base, matchType: false });
+
+    const methods = new Set<string>();
+
+    for(const p of path)
+      if(p.type)
+        methods.add(p.type);
+
+    return { methods: Array.from(methods.values()).join(', ') };
   }
 }
 

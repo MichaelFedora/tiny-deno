@@ -283,7 +283,7 @@ export class AuthApi extends Api {
     router.get('/sessions', async req => json(await this.sessions(req.user)));
 
     router.delete('/sessions/:id', async req => {
-      await this.deleteSession(req.params!.id!, req.user);
+      await this.deleteSession(req.params.id!, req.user);
 
       return noContent();
     });
@@ -336,7 +336,7 @@ export class AuthApi extends Api {
 
         console.log(req.params, req.query);
 
-        req.handshake = await this.testHandshake(req.params!.id!, req.session!);
+        req.handshake = await this.testHandshake(req.params.id!, req.session!);
         return next();
       });
 
@@ -368,10 +368,10 @@ export class AuthApi extends Api {
       masterKeyRouter.use(handleError('auth-master-key'));
 
       masterKeyRouter.post('/:id/generate-session', async req => {
-        if(!req.query?.scopes)
+        if(!req.query.scopes)
           throw new MalformedError('?scopes=[..] required!');
 
-        return json(await this.generateSessionFromMasterKey(req.params!.id!, this.#validateScopes(req.query.scopes)));
+        return json(await this.generateSessionFromMasterKey(req.params.id!, this.#validateScopes(req.query.scopes)));
       });
 
       masterKeyRouter.use(requireUserSession, (req, next) => {
@@ -382,12 +382,12 @@ export class AuthApi extends Api {
       });
 
       masterKeyRouter.get('/', async req => json(await this.getMasterKeys(req.user!.id!)));
-      masterKeyRouter.post('/', async req => text(await this.addMasterKey(req.user!.id!, req.query?.name)));
+      masterKeyRouter.post('/', async req => text(await this.addMasterKey(req.user!.id!, req.query.name)));
 
       masterKeyRouter.use('/:id', async (req, next) => {
-        const key = await this.getMasterKey(req.params!.id!, req.user!.id!);
+        const key = await this.getMasterKey(req.params.id!, req.user!.id!);
         if(!key)
-          throw new NotFoundError('Key not found with id "' + req.params!.id! + '"!');
+          throw new NotFoundError('Key not found with id "' + req.params.id! + '"!');
 
         req.masterKey = key;
 

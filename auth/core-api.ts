@@ -49,7 +49,7 @@ export class CoreApi extends Api<AuthRequest> {
     router.get('/self', handleError('get-self'), optionalUserSession, req => json(this.self(req.user)));
 
     router.delete('/self', handleError('delete-self'), requireUserSession, async (req: AuthRequest) => {
-      if(!req.query?.pass)
+      if(!req.query.pass)
         throw new MalformedError('?pass=.. required!');
 
       await this.deleteSelf(req.session!, req.user, req.query.pass);

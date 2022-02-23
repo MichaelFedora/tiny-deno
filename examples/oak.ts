@@ -70,7 +70,7 @@ router.use('/db', dbApi.compile());
 
 router.get('/dump/key-value', async () => json(await kv.search({ })));
 router.get('/dump/dyn', async () => json(await dts.list()));
-router.get('/dump/dyn/:table', async req => json(await dts.table(req.params!.table!).all()));
+router.get('/dump/dyn/:table', async req => json(await dts.table(req.params.table!).all()));
 
 const app = new Application();
 

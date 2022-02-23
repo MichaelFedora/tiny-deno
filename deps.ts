@@ -40,3 +40,16 @@ export { DB, type PreparedQuery } from 'https://deno.land/x/sqlite@v3.2.0/mod.ts
 // pg
 
 export type { Client, PoolClient } from 'https://deno.land/x/postgres@v0.15.0/mod.ts';
+
+// jose
+
+export * as jose from 'https://deno.land/x/jose@v4.5.0/index.ts';
+
+// libauth
+
+// export * as libauth from 'https://deno.land/x/libauth@v1.19.1/src/index.ts';
+import { instantiateSha256 } from 'https://unpkg.com/@bitauth/libauth/build/module/lib/crypto/sha256.js';
+import { instantiateRipemd160 } from 'https://unpkg.com/@bitauth/libauth/build/module/lib/crypto/ripemd160.js';
+import { encodeBase58Address } from 'https://unpkg.com/@bitauth/libauth/build/module/lib/address/base58-address.js';
+
+export { instantiateSha256, instantiateRipemd160, encodeBase58Address };

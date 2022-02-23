@@ -45,6 +45,13 @@ export abstract class AuthDb {
   abstract delUser(id: string): Promise<void>;
   abstract getUserFromUsername(username: string): Promise<AuthUser | null>;
 
+  // user preferences
+
+  /* abstract putUserPref(id: string, key: string, value: string);
+  abstract getUserPref(id: string, key: string);
+  abstract findUserPref(id: string, value: string);
+  abstract findUserFromPref(key: string, value: string); */
+
   // handshakes
 
   abstract addHandshake(hs: Handshake): Promise<string>;

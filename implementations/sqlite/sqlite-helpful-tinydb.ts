@@ -1,6 +1,6 @@
 import { assertEquals } from '../../deps/std.ts';
 
-import { DB } from 'https://deno.land/x/sqlite/mod.ts';
+import { DB } from '../../deps/sqlite.ts';
 
 import { User } from '../../common/types.ts';
 import HelpfulTinyDb from '../../db/helpers/helpful-tiny-db.ts';

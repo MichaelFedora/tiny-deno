@@ -2,11 +2,12 @@ import { serveFile } from 'https://deno.land/std@0.123.0/http/file_server.ts';
 import { writableStreamFromWriter } from 'https://deno.land/std@0.123.0/streams/conversion.ts';
 import { join as joinPath } from 'https://deno.land/std@0.123.0/path/mod.ts';
 
+import { ForbiddenError, NotSupportedError, MalformedError, NotFoundError } from '../../common/errors.ts';
+import { TinyRequest } from '../../common/types.ts';
 
-import { ForbiddenError, NotSupportedError, MalformedError } from '../../common/errors.ts';
 import FileStore from '../../common/file-store.ts';
 
-import { sizeOf } from '../../implementations/native/disk-util.ts';
+import { sizeOf } from './disk-util.ts';
 
 export class DiskFileStore extends FileStore {
 
@@ -14,7 +15,7 @@ export class DiskFileStore extends FileStore {
   #storageMax: number | undefined;
   #userStorageMax: number | undefined;
 
-  #base: string | undefined;
+  #base: string;
 
   async #ls(path: string) {
     const ret: Deno.DirEntry[] = [];
@@ -50,10 +51,11 @@ export class DiskFileStore extends FileStore {
     this.#storageRoot = config.storageRoot;
     this.#storageMax = config.storageMax;
     this.#userStorageMax = config.userStorageMax;
+    this.#base = Deno.realPathSync(this.#storageRoot);
 
     Deno.realPath(this.#storageRoot)
       .then(path => this.#base = path)
-      .catch(e => console.error('Error getting storage root path:', e));
+      .catch(e => console.error('[DISK-FS] Error getting storage root path:', e));
   }
 
   validatePath(path: string, forcePublic = false): string {
@@ -70,8 +72,19 @@ export class DiskFileStore extends FileStore {
     return real.slice(this.#base.length);
   }
 
-  async sendFile(path: string, req = new Request('')): Promise<Response> {
-    return await serveFile(req, joinPath(this.#base + '/' + path));
+  async sendFile(req: TinyRequest, path: string): Promise<Response> {
+    const filePath = joinPath(this.#base + '/' + path);
+
+    try {
+      return await serveFile(req instanceof Request ? req : new Request('', req), filePath);
+
+    } catch(e) {
+      console.error('[DISK-FS] Error serving file at:', filePath);
+
+      throw e instanceof Deno.errors.NotFound
+        ? new NotFoundError()
+        : e;
+    }
   }
 
   async saveFile(body: BodyInit, path: string): Promise<number> {
@@ -108,7 +121,7 @@ export class DiskFileStore extends FileStore {
     const folders = path.slice(this.#storageRoot.length).split(/[\/\\]+/g).filter(Boolean).slice(0, -1);
 
     for(let i = 0; i < folders.length; i++) {
-      const dir = await Deno.realPath(this.#storageRoot + '/' + folders.slice(0, folders.length - i).join('/'));
+      const dir = await Deno.realPath(this.#base + '/' + folders.slice(0, folders.length - i).join('/'));
       const size = await sizeOf(dir);
       if(!size)
         await Deno.remove(dir);
@@ -122,7 +135,7 @@ export class DiskFileStore extends FileStore {
 
     let max = undefined;
     if(this.#storageMax) {
-      const currentUsed = await sizeOf(this.#storageRoot);
+      const currentUsed = await sizeOf(this.#base!);
 
       max = this.#storageMax - currentUsed + used;
 

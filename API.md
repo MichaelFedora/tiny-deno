@@ -13,19 +13,20 @@ All URLs land under the `/auth` parent route, e.x.:
 - `POST /auth/login`
 - `GET /auth/handshake/start`
 
-- POST `/login`
-- POST `/register`
-- POST `/change-pass`
-- GET `/sessions`
-- DELETE `/session/:id?`
-- POST `/logout`
-- GET `/refresh`
-- GET `/handshake/start`
-- POST `/handshake/complete`
-- GET `/handshake/:id/(approve|cancel)?`
-- GET | POST `/master-key`
-- PUT | DELETE `/master-key/:id`
-- POST `/master-key/:id/generate-session`
+- POST `/login` - Post with a body of `{ username: string; password: string }` and either get a 403 or a session
+- POST `/register` - Post with a body of `{ username: string; password: string }` and get a 401 or a 204.
+- POST `/change-pass` - Post with a body of `{ username: string; password: string; newpass: string }`
+  and either get a 403 or a 204.
+- GET `/sessions` - Receives a list of active sessions
+- DELETE `/session/:id?` - Revoke all or one session via ID)
+- POST `/logout` - Logout of the currently authorized session
+- GET `/refresh` - Refresh the current session - revokes the old session and returns a new ID
+- GET `/handshake/start` - Start a handshake by redirecting to this route
+- POST `/handshake/complete` - Finish a handshake by posting data to this route and getting a session back
+- GET `/handshake/:id/(approve|cancel)?` - Approve or cancel a handshake - this is for a Tiny node UI to use
+- GET | POST `/master-key` - Get all or add a master-key to the Tiny node with an optional `name` query param
+- PUT | DELETE `/master-key/:id` - Update (the name) or remove a master-key
+- POST `/master-key/:id/generate-session` - Use a master-key to generate a session
 
 ## Scoped Features
 

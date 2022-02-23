@@ -1,15 +1,19 @@
-import { ForbiddenError, MalformedError } from '../common/errors.ts';
+import { MalformedError, NotFoundError } from '../common/errors.ts';
 
-import { Router, RouteHandler, json, text, noContent } from '../api/mod.ts';
+import { Router, RouteHandler, json, noContent } from '../api/mod.ts';
 import { TinyRequest, User } from '../common/types.ts';
 import { handleError } from '../common/middleware.ts';
 import Api from '../common/api.ts';
-
-import type { FileList, FileListAdvance } from './file-types.ts';
-import type FileDb from './file-db.ts';
 import type FileStore from '../common/file-store.ts';
 
+import type { FileList, FileListAdvance, FileInfo } from './file-types.ts';
+import type FileDb from './file-db.ts';
+
 export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
+
+  protected async parsePath(username: string, path: string) {
+    return await this.fs.validatePath(`/${username}/${path}`);
+  }
 
   #validateScopes(scopes: readonly string[], path: string): boolean {
     if(scopes.includes('!user') || scopes.includes('/'))
@@ -20,40 +24,47 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
 
   constructor(protected readonly db: FileDb,
     protected readonly fs: FileStore,
-    protected readonly sessionValidator: RouteHandler<Req>,
-    protected readonly sendFile: (req: Req, path: string) => Response | Promise<Response>) {
+    protected readonly sessionValidator: RouteHandler<Req>) {
 
     super();
   }
 
   // #region store
 
-  async read(username: string, path: string): Promise<Response> {
-    return await this.fs.sendFile(path); // || await this.readFile()...etc.
+  async read(req: TinyRequest, username: string, path: string): Promise<Response> {
+    path = username + path;
+
+    return await this.fs.sendFile(req, path); // || await this.readFile()...etc.
   }
 
   async write(username: string, path: string, file: BodyInit, type?: string) {
     path = username + path;
     const size = await this.fs.saveFile(file, path);
 
-    console.log('write!', path);
-
-    await this.db.setFileInfo(path, {
+    const info: FileInfo = {
       name: path.slice(path.lastIndexOf('/') + 1),
       modified: Date.now(),
       size,
       path,
       type
-    });
+    }
+
+    await this.db.setFileInfo(path, info);
+
+    return info;
   }
 
   async delete(username: string, path: string): Promise<void> {
+    path = username + path;
+
     await this.fs.deleteFile(path);
     await this.db.delFileInfo(path);
   }
 
   async list(username: string, path: string, page?: number, advance?: boolean): Promise<FileList | FileListAdvance>;
   async list(username: string, path: string, page?: number, advance = false): Promise<FileList | FileListAdvance> {
+    path = username + path;
+
     if(advance)
       return await this.db.listFilesAdvance(path, page);
     else
@@ -64,8 +75,12 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     return await this.fs.getStorageStats(user.id!);
   }
 
-  async batchInfo(paths: string[]) {
-    return await Promise.all(paths.map(p => this.db.getFileInfo(p)));
+  async getInfo(username: string, path: string) {
+    return await this.db.getFileInfo(username + '/' + path);
+  }
+
+  async batchInfo(username: string, paths: string[]) {
+    return await Promise.all(paths.map(p => this.db.getFileInfo(username + '/' + p)));
   }
 
   // #endregion store
@@ -80,33 +95,46 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     const filesRouter = new Router<Req>();
     filesRouter.use(handleError('files'));
 
-    filesRouter.use('/:path(.*)', this.sessionValidator, (req, next) => {
-      if(!this.#validateScopes(req.session!.scopes, '/' + req.params!.path!))
+    filesRouter.use('/:path(.*)', this.sessionValidator, async (req, next) => {
+      if(!this.#validateScopes(req.session!.scopes, '/' + req.params.path!))
         throw new MalformedError('Path out of scope(s)!');
+
+      req.context.path = await this.parsePath(req.user!.username, req.params.path!);
 
       return next();
     });
 
-    filesRouter.get('/:path(.*)', async req => await this.sendFile(req, await this.fs.validatePath(`/${req.user!.username}/${req.params!.path!}`)));
+    filesRouter.get('/:path(.*)', async req => {
+      if(req.query.info == undefined)
+        return await this.read(req, req.user!.username, req.context.path as string);
+
+      const info = await this.getInfo(req.user!.username, req.context.path as string)
+
+      if(!info)
+        throw new NotFoundError();
+
+      return json(info);
+    });
+
     filesRouter.put('/:path(.*)', async req => {
-      await this.write(req.user!.username, '/' + req.params!.path!, await req.stream() || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
+      await this.write(req.user!.username, req.context.path as string, req.stream || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
       return noContent();
     });
 
     filesRouter.delete('/:path(.*)', async req => {
-      await this.delete(req.user!.username, '/' + req.params!.path!);
+      await this.delete(req.user!.username, req.context.path as string);
       return noContent();
     });
 
     router.use('/files', filesRouter);
 
     router.get('/list-files/:path(.*)?', this.sessionValidator, async req => {
-      req.params!.path = '/' + req.params!.path;
-
-      if(!this.#validateScopes(req.session!.scopes, req.params!.path!))
+      if(!this.#validateScopes(req.session!.scopes, req.params.path!))
         throw new MalformedError('Path out of scope(s)!');
 
-      return json(await this.list(req.user!.username, req.params!.path!, Number(req.query?.page) || 0, Boolean(req.query?.advance)));
+      const path = await this.parsePath(req.user!.username, req.params.path!);
+
+      return json(await this.list(req.user!.username, path, Number(req.query.page) || 0, Boolean(req.query.advance)));
     });
 
     router.get('/storage-stats', this.sessionValidator, async req => json(!req.user ? null : await this.fs.getStorageStats(req.user)))
@@ -118,7 +146,7 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
       if(!body || !(body instanceof Array))
         throw new MalformedError('Body must be a string[]!');
 
-      return json(await this.batchInfo(body.map(p => `/public/${req.params!.username!}${(p.startsWith('/') ? '' : '/')}${p}`)));
+      return json(await this.batchInfo(req.params.username!, body.map(p => `/public${(p.startsWith('/') ? '' : '/')}${p}`)));
     });
 
     return router;

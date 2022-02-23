@@ -69,7 +69,7 @@ input ${this.name}Input {
     return /* GraphQL */ `
 input ${this.name}BatchInput {
   type: Operation!
-  id: String!
+  id: ID!
   value: ${this.name}Input
 }`.trim();
   }
@@ -78,7 +78,7 @@ input ${this.name}BatchInput {
     return /* GraphQL */ `
 type ${this.name}BatchReturn {
   type: Operation!
-  id: String!
+  id: ID!
   value: ${this.name}
 }`.trim();
   }

@@ -2,8 +2,5 @@
     "deno.enable": true,
     "deno.lint": true,
     "deno.unstable": false,
-    "cSpell.words": [
-        "GraphiQL"
-    ],
     // "deno.importMap": "./import_map.json"
 }

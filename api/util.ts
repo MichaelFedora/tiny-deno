@@ -1,5 +1,5 @@
 /**
- * Create a text response
+ * Create a text response.
  * @param {string} body The body of the response
  * @param {ResponseInit} init Response options
  * @returns {Response} The response
@@ -22,7 +22,7 @@ export function text(body = '', init: ResponseInit = { }): Response {
 }
 
 /**
- * Create a JSON response
+ * Create a JSON response.
  * @param {any} body The body of the response
  * @param {ResponseInit} init Response options
  * @returns {Response} The response
@@ -54,11 +54,31 @@ export function noContent(init: ResponseInit = { }): Response {
 }
 
 /**
- * Create a redirect response.
+ * Create a 307 redirect response.
  * @param {string} url The redirect url
  * @param {ResponseInit} init Response options
  * @returns {Response} The response
  */
 export function redirect(url: string, init: ResponseInit = { }): Response {
-  return new Response(undefined, { status: 302, ...init, headers: { ...init.headers, location: url } });
+  return new Response(undefined, { status: 307, ...init, headers: { ...init.headers, location: url } });
+}
+
+/**
+ * Create a 412 precondition failed response.
+ * @param {BodyInit | undefined | null} body The body of the response
+ * @param {ResponseInit} init Response options
+ * @returns {Response} The response
+ */
+export function preconditionFailed(body?: BodyInit | undefined | null, init?: ResponseInit): Response {
+  return new Response(body, { status: 412, statusText: 'Precondition Failed', ...init })
+}
+
+/**
+ * Create a 409 conflict response.
+ * @param {BodyInit | undefined | null} body The body of the response
+ * @param {ResponseInit} init Response options
+ * @returns {Response} The response
+ */
+export function conflict(body?: BodyInit | undefined | null, init?: ResponseInit): Response {
+  return new Response(body, { status: 409, statusText: 'Conflict', ...init });
 }

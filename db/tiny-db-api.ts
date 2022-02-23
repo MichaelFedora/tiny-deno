@@ -83,28 +83,28 @@ export class TinyDbApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     const dbRouter = new Router<Req>();
 
     dbRouter.use('/:scope', this.sessionValidator, (req, next) => {
-      if(!req.session!.scopes.includes('/' + req.params!.scope!))
+      if(!req.session!.scopes.includes('/' + req.params.scope!))
         throw new MalformedError('Key out of scope(s)!');
 
       return next();
     });
 
     dbRouter.get('/:scope/:key', async req => {
-      return json(await this.keyValueGet(req.user!.id, req.params!.scope!, req.params!.key!));
+      return json(await this.keyValueGet(req.user!.id, req.params.scope!, req.params.key!));
     });
 
     dbRouter.post('/:scope', async req => {
-      const id = await this.keyValueAdd(req.user!.id, req.params!.scope!, await req.json());
+      const id = await this.keyValueAdd(req.user!.id, req.params.scope!, await req.json());
       return text(id);
     });
 
     dbRouter.put('/:scope/:key', async req => {
-      await this.keyValuePut(req.user!.id, req.params!.scope!, req.params!.key!, await req.json());
+      await this.keyValuePut(req.user!.id, req.params.scope!, req.params.key!, await req.json());
       return noContent();
     });
 
     dbRouter.delete('/:scope/:key', async req => {
-      await this.keyValueDel(req.user!.id, req.params!.scope!, req.params!.key!);
+      await this.keyValueDel(req.user!.id, req.params.scope!, req.params.key!);
       return noContent();
     });
 
@@ -127,21 +127,21 @@ export class TinyDbApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     tablesRouter.use(handleError('tables'));
 
     tablesRouter.get('/:name?', async req =>
-      json(await this.dynGetTable(req.user!.id, req.params!.scope!, req.params!.name)));
+      json(await this.dynGetTable(req.user!.id, req.params.scope!, req.params.name)));
 
     tablesRouter.post('/', async req =>
-      json(await this.dynRegisterTables(req.user!.id, req.params!.scope!, await req.text())));
+      json(await this.dynRegisterTables(req.user!.id, req.params.scope!, await req.text())));
 
     tablesRouter.put('/:name', async req =>
-      json(await this.dynReplaceTable(req.user!.id, req.params!.scope!, req.params!.name!, await req.text())));
+      json(await this.dynReplaceTable(req.user!.id, req.params.scope!, req.params.name!, await req.text())));
 
     tablesRouter.delete('/:name', async req => {
-      await this.dynDropTable(req.user!.id, req.params!.scope!, req.params!.name!);
+      await this.dynDropTable(req.user!.id, req.params.scope!, req.params.name!);
       return noContent();
     });
 
     tablesRouter.delete('', async req => {
-      await this.dynDropAll(req.user!.id, req.params!.scope!);
+      await this.dynDropAll(req.user!.id, req.params.scope!);
       return noContent();
     });
 
@@ -160,7 +160,7 @@ export class TinyDbApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
           return new Response('No GraphiQL renderer!', { status: 500 });
       }
 
-      const result = await this.db.query(req.user!.id, req.params!.scope!, (data.query || data.mutation)!);
+      const result = await this.db.query(req.user!.id, req.params.scope!, (data.query || data.mutation)!);
 
       return new Response(JSON.stringify(result, null, 2), { status: 200, headers: { 'Content-Type': data.contentType } });
     });

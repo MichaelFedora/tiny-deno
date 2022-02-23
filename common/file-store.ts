@@ -1,8 +1,10 @@
+import { TinyRequest } from '../common/types.ts';
+
 export abstract class FileStore {
 
   abstract validatePath(path: string, forcePublic?: boolean): string | Promise<string>;
 
-  abstract sendFile(path: string): Response | Promise<Response>;
+  abstract sendFile(req: TinyRequest, path: string): Response | Promise<Response>;
   abstract saveFile(body: BodyInit, path: string): Promise<number>;
   abstract deleteFile(path: string): Promise<void>;
 

@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { maylily } from '../../deps.ts';
 
-import { NotFoundError } from '../../common/errors.ts';
+import { NotFoundError, MalformedError } from '../../common/errors.ts';
 import type { SearchOptions, BatchOptions } from '../../common/types.ts';
 import type { GQLSchema, GQLResult } from './../db-types.ts';
 
@@ -48,6 +48,9 @@ export class HelpfulTinyDb extends TinyDb {
   }
 
   public async add<T = any>(user: string, scope: string, value: T): Promise<string> {
+    if(typeof value !== 'object' || !value)
+      throw new MalformedError('Cannot add a non-object item to the key-value store with a generated ID.');
+
     const key = await maylily();
     (value as Record<string, unknown>).key = key;
     await this.keyValueStore.put(this.#key(user, scope, key), value);

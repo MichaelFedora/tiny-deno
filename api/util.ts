@@ -1,3 +1,34 @@
+// # Functions
+
+/**
+ * Parse a query from a URL via URLSearchParams.
+ * @param url The URL to parse the query from
+ * @returns An object with the queries from the URL
+ */
+export function parseQuery(url: string): Record<string, string> {
+  return (url.includes('?')
+    ? Object.fromEntries((new URLSearchParams(url.slice(url.indexOf('?')))).entries())
+    : undefined) ?? { };
+}
+
+/**
+ * Parse URL parameters from a url for the given route via URLPattern
+ * Do not use this as a matching function, for this matches routes that have other information via
+ * the reserved parameter `tiny_else`, in addition to which you should not use.
+ *
+ * @param route The route to use as the template
+ * @param url The URL to parse the query from
+ * @returns An object with the parameters from the URL
+ */
+export function parseParams(route: string, url: string): Record<string, string> {
+  const params = (new URLPattern({ pathname: route + '/:tiny_else(.*)?' })).exec(url)?.pathname?.groups ?? { };
+  delete params.tiny_else;
+
+  return params;
+}
+
+// # Responses
+
 /**
  * Create a text response.
  * @param {string} body The body of the response

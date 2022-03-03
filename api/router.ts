@@ -1,4 +1,5 @@
 import { SlimRequestStub, RequestStub, RouteHandler } from './types.ts';
+import { parseQuery, parseParams } from './util.ts';
 
 /**
  * A step on the path of the router
@@ -36,6 +37,15 @@ export class Router<Req extends RequestStub = RequestStub> {
       const call = () => handlers[i] ? handlers[i++](ctx, call) : next();
       return await call();
     };
+  }
+
+  /**
+   * Map the steps of the router to something that may be more useful for consumption.
+   *
+   * @param callbackfn The callback function when mapping a step
+   **/// deno-lint-ignore no-explicit-any
+  map<R extends Req = Req, Ret = any>(callbackfn: (step: RouteStep<R>) => Ret): Ret[] {
+    return this.#steps.map((v) => callbackfn(v));
   }
 
   /**
@@ -217,9 +227,7 @@ export class Router<Req extends RequestStub = RequestStub> {
       else {
         path.push({ type: step.type, handler: (req, next) => {
           // match the route params for utility reasons
-          req.params = (new URLPattern({ pathname: route + '/:else(.*)?' })).exec(req.url)?.pathname?.groups ?? { };
-          delete req.params.else;
-
+          req.params = parseParams(step.route, req.url);
           return handler(req, next);
         } });
       }
@@ -253,10 +261,7 @@ export class Router<Req extends RequestStub = RequestStub> {
     const context = req.context;
 
     // generate the query object for utility reasons
-    req.query = (req.url.includes('?')
-      ? Object.fromEntries((new URLSearchParams(req.url.slice(req.url.indexOf('?')))).entries())
-      : undefined) ?? { };
-
+    req.query = parseQuery(req.url);
     req.context = { };
 
     // used to check if the chain never finished and we got "ghosted"

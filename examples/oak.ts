@@ -1,76 +1,9 @@
-/** BROKEN */
-
 import { Application, Router as OakRouter, send } from 'https://deno.land/x/oak@v10.2.0/mod.ts';
-import { renderPlaygroundPage } from 'https://deno.land/x/gql@1.1.1/graphiql/render.ts';
 
-import { DB } from '../deps/sqlite.ts';
-import { Router, json } from '../api/mod.ts';
-
-import { handleError } from '../common/middleware.ts';
+import { appendRouterToOak } from '../api/helpers/oak.ts';
 import { MalformedError } from '../common/errors.ts';
 
-import { AuthRequest } from '../auth/auth-types.ts';
-import { validateUserSession } from '../auth/auth-middleware.ts';
-import AuthApi from '../auth/auth-api.ts';
-import CoreApi from '../auth/core-api.ts';
-import HelpfulAuthDb from '../auth/helpers/helpful-auth-db.ts';
-
-import TinyDbApi from '../db/tiny-db-api.ts';
-import HelpfulTinyDb from '../db/helpers/helpful-tiny-db.ts';
-
-import FileApi from '../file/file-api.ts';
-import HelpfulFileDb from '../file/helpers/helpful-file-db.ts';
-
-import SQLiteKeyValueStore from '../implementations/sqlite/sqlite-key-value-store.ts';
-import SQLiteDynTableStore from '../implementations/sqlite/sqlite-dyn-table-store.ts';
-
-const db = new DB(':memory:');
-
-const kv = new SQLiteKeyValueStore(db, 'KeyValue');
-await kv.init();
-
-const dts = new SQLiteDynTableStore(db, 'dyn');
-await dts.init();
-
-
-const authDb = new HelpfulAuthDb(dts, { });
-await authDb.init();
-
-const tinyDb = new HelpfulTinyDb(kv, dts, id => authDb.getUser(id));
-await tinyDb.init();
-
-const fileDb = new HelpfulFileDb(kv);
-await fileDb.init();
-
-
-const coreApi = new CoreApi(authDb, 'complete (std)');
-const authApi = new AuthApi(authDb);
-const dbApi = new TinyDbApi(tinyDb,
-  validateUserSession(authDb),
-  req => {
-    const playground = renderPlaygroundPage({ endpoint: new URL(req.url).pathname });
-
-    return new Response(playground, { status: 200, headers: { 'Content-Type': 'text/html' } });
-  });
-const fileApi = new FileApi(fileDb, new DiskFileStore(), validateUserSession(authDb), path => {
-  const res = new Response();
-  send());
-
-const router = new Router<Request & AuthRequest>();
-router.use(handleError('root'));
-
-router.use((req, next) => {
-  console.log(`[${req.method}] ${req.url.replace(/\?sid=\w+$/, ' (auth\'d)')}`)
-  return next();
-});
-
-coreApi.compile(router);
-router.use('/auth', authApi.compile());
-router.use('/db', dbApi.compile());
-
-router.get('/dump/key-value', async () => json(await kv.search({ })));
-router.get('/dump/dyn', async () => json(await dts.list()));
-router.get('/dump/dyn/:table', async req => json(await dts.table(req.params.table!).all()));
+import { basePath, root, router } from './common.ts';
 
 const app = new Application();
 
@@ -102,11 +35,10 @@ app.use((ctx, next) => {
   ctx.response.headers.append('allow', '*');
 });
 
-// tiny router
+// handle the tiny router; backup in case the append doesn't work
+/*
 app.use(async (ctx, next) => {
-  const req = Object.assign(ctx.request.originalRequest.request, {
-    stream() { return Promise.resolve(ctx.request.body({ type: 'stream' }).value); }
-  });
+  const req = Object.assign(ctx.request.originalRequest.request, { stream: ctx.request.body({ type: 'stream' })?.value });
 
   const res = await router.process(req);
   if(!res)
@@ -118,10 +50,12 @@ app.use(async (ctx, next) => {
   ctx.response.status = res.status
   ctx.response.body = res.body
 });
+*/
 
 const oakRouter = new OakRouter();
 
-const basePath = await Deno.realPath(Deno.cwd() + '/common/dist/');
+// append the tiny router to oak
+appendRouterToOak(router, oakRouter);
 
 oakRouter.get('/:path(.*)', async (ctx, next) => {
   if(ctx.request.method !== 'GET' || !ctx.params.path)
@@ -147,8 +81,6 @@ oakRouter.get('/:path(.*)', async (ctx, next) => {
     throw e;
   }
 });
-
-const root = await Deno.realPath(basePath + '/index.html');
 
 oakRouter.use((ctx, next) => ctx.request.method !== 'GET' ? next() : send(ctx, root));
 

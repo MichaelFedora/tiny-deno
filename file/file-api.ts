@@ -1,13 +1,15 @@
 import { MalformedError, NotFoundError } from '../common/errors.ts';
 
 import { Router, RouteHandler, json, noContent } from '../api/mod.ts';
-import { TinyRequest, User } from '../common/types.ts';
+import { TinyRequest, User, Session } from '../common/types.ts';
 import { handleError } from '../common/middleware.ts';
 import Api from '../common/api.ts';
 import type FileStore from '../common/file-store.ts';
 
 import type { FileList, FileListAdvance, FileInfo } from './file-types.ts';
 import type FileDb from './file-db.ts';
+
+const pathRoots = Object.freeze([ 'public', 'private', 'root', 'collections' ]);
 
 export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
 
@@ -23,22 +25,24 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
   }
 
   constructor(protected readonly db: FileDb,
-    protected readonly fs: FileStore,
-    protected readonly sessionValidator: RouteHandler<Req>) {
+    protected readonly fs: FileStore) {
 
     super();
   }
 
   // #region store
 
-  async read(req: TinyRequest, username: string, path: string): Promise<Response> {
-    path = username + path;
+  async read(req: TinyRequest, path: string): Promise<Response> {
+    if(!path.startsWith('/'))
+      path = '/' + path;
 
     return await this.fs.sendFile(req, path); // || await this.readFile()...etc.
   }
 
-  async write(username: string, path: string, file: BodyInit, type?: string) {
-    path = username + path;
+  async write(path: string, file: BodyInit, type?: string) {
+    if(!path.startsWith('/'))
+      path = '/' + path;
+
     const size = await this.fs.saveFile(file, path);
 
     const info: FileInfo = {
@@ -54,16 +58,17 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     return info;
   }
 
-  async delete(username: string, path: string): Promise<void> {
-    path = username + path;
+  async delete(path: string): Promise<void> {
+    if(!path.startsWith('/'))
+      path = '/' + path;
 
     await this.fs.deleteFile(path);
     await this.db.delFileInfo(path);
   }
 
-  async list(username: string, path: string, page?: number, advance?: boolean): Promise<FileList | FileListAdvance>;
-  async list(username: string, path: string, page?: number, advance = false): Promise<FileList | FileListAdvance> {
-    path = username + path;
+  async list(path: string, page?: number, advance = false): Promise<FileList | FileListAdvance> {
+    if(!path.startsWith('/'))
+      path = '/' + path;
 
     if(advance)
       return await this.db.listFilesAdvance(path, page);
@@ -75,60 +80,171 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     return await this.fs.getStorageStats(user.id!);
   }
 
-  async getInfo(username: string, path: string) {
-    return await this.db.getFileInfo(username + '/' + path);
+  async getInfo(path: string) {
+    if(!path.startsWith('/'))
+      path = '/' + path;
+
+    return await this.db.getFileInfo(path);
   }
 
-  async batchInfo(username: string, paths: string[]) {
-    return await Promise.all(paths.map(p => this.db.getFileInfo(username + '/' + p)));
+  async batchInfo(paths: string[]) {
+    return await Promise.all(paths.map(p => this.db.getFileInfo(p)));
   }
 
   // #endregion store
 
   /**
+   * Compile the file API into a router. The router (or the router this is going into)
+   * should already have the `/files/:context/:identifier` on it, with optional
+   * authentication validation.
    *
-   * @param router The root router to hook onto
-   * @returns
+   * @param router A router to hook onto
+   * @returns The new/given router
    */
   compile(router: Router<Req> = new Router<Req>()): Router<Req> {
 
-    const filesRouter = new Router<Req>();
-    filesRouter.use(handleError('files'));
+    const cleanPath = function(path: string): string {
+      return ('/' + path).replace(/\.{2,}/g, '').replace(/(\/+\.)?\/+/g, '/');
+    }
 
-    filesRouter.use('/:path(.*)', this.sessionValidator, async (req, next) => {
-      if(!this.#validateScopes(req.session!.scopes, '/' + req.params.path!))
-        throw new MalformedError('Path out of scope(s)!');
+    const makePath = function(user: string,
+      root: 'public' | 'private' | 'root' | 'collection',
+      context: 'user' | 'secure' | string,
+      identifier: string,
+      path: string): string {
 
-      req.context.path = await this.parsePath(req.user!.username, req.params.path!);
+      let absPath = `/${user}`;
 
-      return next();
-    });
+      if(root === 'public')
+        absPath += '/public';
 
-    filesRouter.get('/:path(.*)', async req => {
-      if(req.query.info == undefined)
-        return await this.read(req, req.user!.username, req.context.path as string);
+      if(root !== 'root') {
+        switch(context) {
+          case 'secure':
+            absPath += `/appdata/secure/${identifier}`;
+            break;
 
-      const info = await this.getInfo(req.user!.username, req.context.path as string)
+          case 'user':
+            if(root === 'private')
+              absPath += '/private';
+            break;
 
-      if(!info)
-        throw new NotFoundError();
+          default: // it's an app
+            absPath += `/appdata/${context}`;
+        }
+      }
 
-      return json(info);
-    });
+      return absPath + path;
+    }
 
-    filesRouter.put('/:path(.*)', async req => {
-      await this.write(req.user!.username, req.context.path as string, req.stream || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
-      return noContent();
-    });
+    const validatePath = (params: {
+        context: 'user' | 'secure' | '~' | string;
+        identifier: string;
 
-    filesRouter.delete('/:path(.*)', async req => {
-      await this.delete(req.user!.username, req.context.path as string);
-      return noContent();
-    });
+        user: string;
 
-    router.use('/files', filesRouter);
+        root: 'public' | 'private' | 'root' | 'collection';
+        path?: string;
+      },
+      session?: Session): false | { perm: 'read' | 'write', path: string } => {
 
-    router.get('/list-files/:path(.*)?', this.sessionValidator, async req => {
+      if(!params.path)
+        return false;
+
+      const context = params.context === '~' ? session?.context : params.context;
+      const identifier = params.identifier === '~' ? session?.identifier : params.identifier;
+
+      if(!context || !identifier)
+        return false;
+
+      // clean up the path and add a '/' prefix
+      const path = cleanPath(params.path);
+      const foreign = !session || session.user !== params.user;
+
+      // create the path
+
+      const absPath = makePath(params.user, params.root, params.context, params.identifier, path);
+      const publicPath =`/${params.user}/public/`;
+
+      // if it's us, and we're a user session, always write access
+      if(!foreign && session.context === 'user')
+        return { perm: 'write', path: absPath };
+
+      // if it's a foreign user, just check to see if it's a public path
+      if(foreign)
+        return absPath.startsWith(publicPath) ? { perm: 'read', path: absPath } : false;
+
+      /** `/${session-user}` */
+      const basePath = `/${session.user}`;
+      /** `${app}/` or `secure/${hash}/` */
+      const appPath = `${context}/` + (context === 'secure' ? `${identifier}/` : '');
+
+      const writePaths = [
+        // `/${session-user}/appdata/${app}/`
+        basePath + '/appdata/' + appPath,
+        // `/${session-user}/public/appdata/${app}/`
+        basePath + '/public/appdata/' + appPath,
+        // `/${session-user}/collections/${coll}/${app}/`
+        ...session.collections.map(coll => basePath + `/collections/${coll}/` + appPath)
+      ];
+
+      if(writePaths.find(p => absPath.startsWith(p)))
+        return { perm: 'write', path: absPath };
+
+      const readPaths = [
+        // `/${route-user}/public/`
+        publicPath,
+        // `/${session-user}/collections/${coll}/`
+        ...session.collections.map(coll => basePath + `/collections/${coll}/`)
+      ];
+
+      if(readPaths.find(p => absPath.startsWith(p)))
+        return { perm: 'read', path: absPath };
+
+      return false;
+    }
+
+    /**
+     * For the following route: `/:root(public|private|root|collections)/:path(.*)'
+     *
+     * Giving the following paramters:
+     * - `root`: `'public' | 'private' | 'root' | 'collections'`
+     * - `path`: `string | undefined`
+     */
+    router.use('/:root(public|private|root|collections)/:path(.*)',
+      handleError('file-store'),
+      new Router<Req>()
+        .use('', async (req, next) => {
+          if(!this.#validateScopes(req.session!.scopes, '/' + req.params.path!))
+            throw new MalformedError('Path out of scope(s)!');
+
+          req.context.path = await this.parsePath(req.user!.username, req.params.path!);
+
+          return next();
+        })
+        .get('', async req => {
+          if(req.query.info == undefined)
+            return await this.read(req, req.user!.username, req.context.path as string);
+
+          const info = await this.getInfo(req.user!.username, req.context.path as string)
+
+          if(!info)
+            throw new NotFoundError();
+
+          return json(info);
+        })
+        .put('', async req => {
+          await this.write(req.user!.username, req.context.path as string, req.stream || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
+          return noContent();
+        })
+        .delete('', async req => {
+          await this.delete(req.user!.username, req.context.path as string);
+          return noContent();
+        }));
+
+
+
+    router.get('/list-files', async req => {
       if(!this.#validateScopes(req.session!.scopes, req.params.path!))
         throw new MalformedError('Path out of scope(s)!');
 
@@ -137,16 +253,23 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
       return json(await this.list(req.user!.username, path, Number(req.query.page) || 0, Boolean(req.query.advance)));
     });
 
-    router.get('/storage-stats', this.sessionValidator, async req => json(!req.user ? null : await this.fs.getStorageStats(req.user)))
+    router.get('/list-files/:root(public|private|root|collections)/:path(.*)?')
+
+    router.get('/storage-stats', async req => json(!req.user ? null : await this.fs.getStorageStats(req.user)))
 
     // POST /batch-info string[]
-    router.post('/public-info/:username', async req => {
+    router.post('/batch-info', async req => {
       const body: string[] = await req.json();
 
       if(!body || !(body instanceof Array))
         throw new MalformedError('Body must be a string[]!');
 
-      return json(await this.batchInfo(req.params.username!, body.map(p => `/public${(p.startsWith('/') ? '' : '/')}${p}`)));
+      const validated = body.map(path => validatePath({ ...req.params, path }, req.session)).filter(Boolean) as { perm: 'read' | 'write'; path: string; }[];
+
+      if(!validated.length)
+        return json([]);
+
+      return json(await this.batchInfo(validated.map(p => p.path)));
     });
 
     return router;

@@ -19,17 +19,17 @@ both in the form of file storage and a database.
 There are two definite types of nodes:
 
 - **Dedicated Nodes** - Nodes that run a slimmed down version of Authentication and either a **File** or
-  a **DB** feature. These are used to help offset the load on a full node, or for users to either use a dedicated
-  node from their full node, or for users to host a dedicated node while using a federated full node.
-- **Full Nodes** - Nodes that run every core feature *but optionally have a **File** and **DB***
+  a **DB** feature. These are used to help offset the load on a Home node, or for users to either use a dedicated
+  node from their Home node, or for users to host a dedicated node while using a federated Home node.
+- **Home Nodes** - Nodes that run every core feature *but optionally have a **File** and **DB***
   *handlers which only redirect to dedicated nodes*.
 
-There are a couple primary features of a Tiny node, and a couple of extensions that can be added on to full nodes,
+There are a couple primary features of a Tiny node, and a couple of extensions that can be added on to Home nodes,
 which are listed below.
 
 ## Core Features
 
-These are the core features of a Tiny Hub, which should all be implemented for a full node, but
+These are the core features of a Tiny Hub, which should all be implemented for a **Home** node, but
 you could also make a dedicated **File** node and a dedicated **DB** node as separate dedicated
 nodes as specified above.
 
@@ -38,10 +38,10 @@ nodes as specified above.
 Authentication is required on every node, as users and applications need ways to authenticate and have
 their authentication tested.
 
-On dedicated nodes, there is the core login/logout feature, as well as the ability to generate keys for full nodes
+On dedicated nodes, there is the core login/logout feature, as well as the ability to generate keys for Home nodes
 to generate sessions on-the-fly, and the handshake feature for applications to run through.
 
-Full nodes have the same feature set in general, but instead of generating keys they use them within the handshake
+Home nodes have the same feature set in general, but instead of generating keys they use them within the handshake
 process.
 
 #### Login / Logout
@@ -52,11 +52,11 @@ access to files or databases**.
 
 #### Master Keys
 
-Dedicated nodes can generate master keys for Full nodes to use to generate sessions on-the-fly. Think of it as
-a mini handshake, which, when an app is finalizing the handshake process, the full node requests a session from
+Dedicated nodes can generate master keys for Home nodes to use to generate sessions on-the-fly. Think of it as
+a mini handshake, which, when an app is finalizing the handshake process, the Home node requests a session from
 the dedicated node with the master key, and the dedicated node returns with a session.
 
-Full Nodes *cannot generate master keys*, but can store and use them to create sessions from dedicated nodes.
+Home Nodes *cannot generate master keys*, but can store and use them to create sessions from dedicated nodes.
 
 #### Handshakes
 
@@ -72,6 +72,17 @@ endpoints to use for storage and such.
 ### File
 
 For apps to be able to read and write files, persistently, as well as to list them and their information.
+
+There are both private and public folders for app data, as well as collections.
+
+Every app gets a public folder (e.x. `/files/~/~/public/...`) which is publicly readable by everyone -- but not publicly
+indexed, and so should be used for hosting images, posts, or other public content, possibly with an `index.json` file at
+the root. The private folder (e.x. `/files/~/~/private/...`) should be used for internal files, like configurations.
+
+Collections are shared between all apps, secure or otherwise, but as they are not publicly accessible they are generally used for
+cross-app shared data, such as images, documents, or other data fragments. Apps only have read access to the collection in total,
+but have write access to their own subfolder (e.x. `/files/~/~/collections/images/my-app`). All authenticated apps have access
+to index these collections as well, but (obviously) only if they have access to that collection.
 
 ### DB
 

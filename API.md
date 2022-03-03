@@ -4,7 +4,21 @@ The API documentation for a Tiny node.
 
 ## Root Features
 
-Root feature land under the root api route, without needing a context scope.
+Root features land under the root api route, without needing a context scope.
+
+### Core
+
+Core features land under the root api route, and are as follows:
+
+- GET `/type` - Returns the type of node, which can be `home`, `file`, or `db`.
+- GET `/self/avatar?` - Returns null if unauthenticated, or the user object if authenticated
+  - If an app, also returns app data (such as preferred nodes, if the node is a home)
+  - If avatar is specified, instead return your avatar image
+- DELETE `/self`
+  - If an app, deletes app data
+  - If a user, deletes all user data -- requires a password string in the text body to confirm
+- DELETE `/self/avatar` - As a user, delete your avatar
+- GET `/users/:username/avatar?` - Get a user's public information, or if `avatar` is specified, just the user's avatar
 
 ### Auth
 
@@ -13,20 +27,42 @@ All URLs land under the `/auth` parent route, e.x.:
 - `POST /auth/login`
 - `GET /auth/handshake/start`
 
+The routes are as follows:
+
+Core:
+
 - POST `/login` - Post with a body of `{ username: string; password: string }` and either get a 403 or a session
 - POST `/register` - Post with a body of `{ username: string; password: string }` and get a 401 or a 204.
+- GET `/can-register` - Returns a 204 or 403 as to whether or not registrations are open on this node.
 - POST `/change-pass` - Post with a body of `{ username: string; password: string; newpass: string }`
   and either get a 403 or a 204.
 - GET `/sessions` - Receives a list of active sessions
-- DELETE `/session/:id?` - Revoke all or one session via ID)
+- DELETE `/session/:id?` - Revoke all or one session via an ID
+- GET `/apps`
+  - If a user, gets a list of connected apps, and, if a home, their preferred file and db storage nodes
+  - If an app, get only a list containing your information
+- DELETE `/apps/:id` - as a User, delete an app and it's information. If the query parameter `?soft` is specified,
+  then just remove its saved configuration, but keep the data.
 - POST `/logout` - Logout of the currently authorized session
 - GET `/refresh` - Refresh the current session - revokes the old session and returns a new ID
+
+Handshakes:
+
 - GET `/handshake/start` - Start a handshake by redirecting to this route
 - POST `/handshake/complete` - Finish a handshake by posting data to this route and getting a session back
-- GET `/handshake/:id/(approve|cancel)?` - Approve or cancel a handshake - this is for a Tiny node UI to use
-- GET | POST `/master-key` - Get all or add a master-key to the Tiny node with an optional `name` query param
-- PUT | DELETE `/master-key/:id` - Update (the name) or remove a master-key
-- POST `/master-key/:id/generate-session` - Use a master-key to generate a session
+- GET `/handshake/:id` - As a user, get handshake information
+- POST `/handshake/:id/(approve|cancel)` - As a user, approve or cancel the handshake and be given back a url
+to redirect to.
+
+Master Keys:
+
+- GET `/master-key/:id?` - Get all or get one master key via an ID
+- POST `/master-key` - Add a master-key to the Tiny node
+  - For a dedicated node, the body can be empty or have a `{ name: string }` object and will return a text body of
+  the master key id
+  - For a home node, the body must be an `{ key: string, url: string, type: 'file' | 'db', name?: string }` object, and will return a 204
+- PUT | DELETE `/master-key/:id` - Update the master key with a body of `{ name: string }`, or remove a master-key
+- POST `/master-key/:id/generate-session` - Use a master-key to generate a session (on a dedicated node)
 
 ## Scoped Features
 
@@ -45,6 +81,9 @@ For example:
   has a `cool.app` context and references `BobTest`, and so will use BobTest's cool.app dynamic database
   to run a graphql query on
 
+If `context` or `identifier` is a `~`, then assume it from the given session, so calling routes like
+`GET /files/~/~/private/config.json` and `GET /files/~/bob.test/public/posts/1.json` is simpler from an app.
+
 ### File
 
 All URLs land under the `/files/:context/:identifier` parent route, e.x.:
@@ -56,7 +95,7 @@ Paths are created with a Root Identifier and then the path itself. Root Identifi
 
 - `public` is the public folder of the context;
   - For apps, it's `/public/appdata/{app domain}`
-  - For secure apps, it's `/public/secure/{hash}`
+  - For secure apps, it's `/public/appdata/secure/{hash}`
   - For users, it's `/public`
 - `private` is the private folder of the context:
   - For apps, it's `/appdata/{app domain}`
@@ -232,8 +271,8 @@ Files are stored under `/{user}/gaia/{address}/{...path}` directory.
 - GET `/gaia/hub_info`
 - POST `/gaia/store/:address/:path(.+)`
 - DELETE `/gaia/delete/:address/:path(.+)`
-- POST `/revoke-all/:address`
-- POST `/list-files/:address`
+- POST `/gaia/revoke-all/:address`
+- POST `/gaia/list-files/:address`
 
 ### WebFinger
 
@@ -256,3 +295,18 @@ It's fairly straightforward:
 ### Activity Pub
 
 Not yet implemented.
+
+### Friends
+
+
+Not yet implemented.
+
+Draft:
+
+- GET `/friends` - Get friends
+- GET `/friends?of` - Get users who have you as a friend
+- GET `/friends/:username` - Get a user's friends
+- GET `/friends/:username?of` - Get users who have the specified user as a friend
+- POST `/friends/:username` - Add a friend
+- DELETE `/friends/:username` - Remove a friend
+- PUT `/friends/notify` - Adjust whether or not you want notifications for friendship changes

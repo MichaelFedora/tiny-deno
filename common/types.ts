@@ -38,8 +38,12 @@ export interface User {
  * - if user: `/{userId}`
  * - if secure: `/{userId}/secure/{hash}` and `/{userId}/public/secure/{hash}`
  *
- * It should also provide access to the requested collection folders:
- * - `/{userId}/collections/{path}`, where `{path}` is an entry in the `collections` array.
+ * It should also provide access to the requested collection folders, where `{collection} is an entry in the `collections` array:
+ * - Read access to `/{userId}/collections/{collection}`
+ * - if app, write access to only the `/{app}` child folder
+ * - if user, write access to the folder
+ * - if secure, write access to only the `/secure/{hash}` child folder
+ *
  *
  * It should provide access to a key-value database with the following prefix (replace `!` with the
  * database-defined separator):
@@ -53,9 +57,9 @@ export interface User {
  * - if user: `{userId}`
  * - if secure: `{userId}!secure!{hash}`
  *
- * It should provide an inbox to the with a standard route of `/:context/:identifier/inbox`
+ * It should provide an inbox with the standard route of `/:context/:identifier/inbox`
  *
- * It should provide an out with the standard route of `/:context/:identifier/outbox`
+ * It should provide an outbox with the standard route of `/:context/:identifier/outbox`
  *
  * *If secure*, it should provide a custom-api route with the parent route `/secure/:hash/api`
  */
@@ -89,6 +93,13 @@ export interface Session {
    * They resolve to `/collections/{path}`.
    */
   collections: readonly string[];
+
+  /**
+   * A list of other permissions the session is allowed to use. For instance,
+   * a session might request a permission needed to use advance features on an extension,
+   * like `friends:send` or just `inbox` to be able to use the extension itself.
+   */
+  permissions: readonly string[];
 }
 
 // Tiny Api

@@ -122,6 +122,11 @@ export interface TinyRequest extends RequestStub {
   user?: User | any;
 }
 
+export interface TinyContextualRequest extends TinyRequest {
+  context: { user: User; [key: string]: unknown };
+  params: { context: string; identifier: string; [key: string]: string | undefined; }
+}
+
 // Query / Search Options
 
 /*

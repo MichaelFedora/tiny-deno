@@ -1,7 +1,7 @@
-import { MalformedError, NotFoundError } from '../common/errors.ts';
+import { ForbiddenError, MalformedError, NotFoundError } from '../common/errors.ts';
 
-import { Router, RouteHandler, json, noContent } from '../api/mod.ts';
-import { TinyRequest, User, Session } from '../common/types.ts';
+import { Router, json, noContent } from '../api/mod.ts';
+import { TinyRequest, TinyContextualRequest, Session } from '../common/types.ts';
 import { handleError } from '../common/middleware.ts';
 import Api from '../common/api.ts';
 import type FileStore from '../common/file-store.ts';
@@ -9,19 +9,121 @@ import type FileStore from '../common/file-store.ts';
 import type { FileList, FileListAdvance, FileInfo } from './file-types.ts';
 import type FileDb from './file-db.ts';
 
-const pathRoots = Object.freeze([ 'public', 'private', 'root', 'collections' ]);
+const roots = Object.freeze(['public', 'private', 'root', 'collections'] as const);
 
-export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
+interface TinyRouteRequest extends TinyContextualRequest {
+  params: TinyContextualRequest['params'] & { root: 'public' | 'private' | 'root' | 'collections'; path?: string };
+}
 
-  protected async parsePath(username: string, path: string) {
-    return await this.fs.validatePath(`/${username}/${path}`);
+/**
+ * The Api for the File Module of the Tiny suite
+ * Should be mounted to a `/:context/:identifier`
+ * with those route params. It should also have an optional-autentication
+ * middleware filling out the User and Session fields.
+ */
+export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> extends Api<Req> {
+
+  cleanPath(path: string): string {
+    return ('/' + path).replace(/\.{2,}/g, '').replace(/(\/+\.)?\/+/g, '/');
   }
 
-  #validateScopes(scopes: readonly string[], path: string): boolean {
-    if(scopes.includes('!user') || scopes.includes('/'))
-      return true;
+  makePath(user: string,
+    root: 'public' | 'private' | 'root' | 'collections',
+    context: 'user' | 'secure' | string,
+    identifier: string,
+    path = '/'): string {
 
-    return Boolean(scopes.find(scope => path.startsWith(scope)));
+    if(!path.startsWith('/'))
+      path = '/' + path;
+
+    let absPath = `/${user}`;
+
+    if(root === 'public')
+      absPath += '/public';
+
+    if(root !== 'root') {
+      switch(context) {
+        case 'secure':
+          absPath += `/appdata/secure/${identifier}`;
+          break;
+
+        case 'user':
+          if(root === 'private')
+            absPath += '/private';
+          break;
+
+        default: // it's an app
+          absPath += `/appdata/${context}`;
+      }
+    }
+
+    return absPath + path;
+  }
+
+  validatePath(params: {
+      context: 'user' | 'secure' | '~' | string;
+      identifier: string;
+
+      root: 'public' | 'private' | 'root' | 'collections';
+      path?: string;
+    },
+    userId: string,
+    session?: Session): false | { perm: 'read' | 'write', path: string } {
+
+    if(!params.path)
+      return false;
+
+    const context = params.context === '~' ? session?.context : params.context;
+    const identifier = params.identifier === '~' ? session?.identifier : params.identifier;
+
+    if(!context || !identifier)
+      return false;
+
+    // clean up the path and add a '/' prefix
+    const path = this.cleanPath(params.path);
+    const foreign = !session || session.user !== userId;
+
+    // create the path
+
+    const absPath = this.makePath(userId, params.root, params.context, params.identifier, path);
+    const publicPath =`/${userId}/public/`;
+
+    // if it's us, and we're a user session, always write access
+    if(!foreign && session.context === 'user')
+      return { perm: 'write', path: absPath };
+
+    // if it's a foreign user, just check to see if it's a public path
+    if(foreign)
+      return absPath.startsWith(publicPath) ? { perm: 'read', path: absPath } : false;
+
+    /** `/${session-user}` */
+    const basePath = `/${session.user}`;
+    /** `${app}/` or `secure/${hash}/` */
+    const appPath = `${context}/` + (context === 'secure' ? `${identifier}/` : '');
+
+    const writePaths = [
+      // `/${session-user}/appdata/${app}/`
+      basePath + '/appdata/' + appPath,
+      // `/${session-user}/public/appdata/${app}/`
+      basePath + '/public/appdata/' + appPath,
+      // `/${session-user}/collections/${coll}/${app}/`
+      ...session.collections.map(coll => basePath + `/collections/${coll}/` + appPath)
+    ];
+
+    if(writePaths.find(p => absPath.startsWith(p)))
+      return { perm: 'write', path: absPath };
+
+    const readPaths = [
+      // `/${route-user}/public/`
+      publicPath,
+      // `/${session-user}/collections/${coll}/`
+      ...session.collections.map(coll => basePath + `/collections/${coll}/`)
+    ];
+
+    if(readPaths.find(p => absPath.startsWith(p)))
+      return { perm: 'read', path: absPath };
+
+    return false;
   }
 
   constructor(protected readonly db: FileDb,
@@ -76,8 +178,8 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
       return await this.db.listFilesAdvance(path, page);
   }
 
-  async getStorageStats(user: User): Promise<{ used: number; available?: number; max?: number }> {
-    return await this.fs.getStorageStats(user.id!);
+  async getStorageStats(userId: string): Promise<{ used: number; available?: number; max?: number }> {
+    return await this.fs.getStorageStats(userId);
   }
 
   async getInfo(path: string) {
@@ -103,107 +205,6 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
    */
   compile(router: Router<Req> = new Router<Req>()): Router<Req> {
 
-    const cleanPath = function(path: string): string {
-      return ('/' + path).replace(/\.{2,}/g, '').replace(/(\/+\.)?\/+/g, '/');
-    }
-
-    const makePath = function(user: string,
-      root: 'public' | 'private' | 'root' | 'collection',
-      context: 'user' | 'secure' | string,
-      identifier: string,
-      path: string): string {
-
-      let absPath = `/${user}`;
-
-      if(root === 'public')
-        absPath += '/public';
-
-      if(root !== 'root') {
-        switch(context) {
-          case 'secure':
-            absPath += `/appdata/secure/${identifier}`;
-            break;
-
-          case 'user':
-            if(root === 'private')
-              absPath += '/private';
-            break;
-
-          default: // it's an app
-            absPath += `/appdata/${context}`;
-        }
-      }
-
-      return absPath + path;
-    }
-
-    const validatePath = (params: {
-        context: 'user' | 'secure' | '~' | string;
-        identifier: string;
-
-        user: string;
-
-        root: 'public' | 'private' | 'root' | 'collection';
-        path?: string;
-      },
-      session?: Session): false | { perm: 'read' | 'write', path: string } => {
-
-      if(!params.path)
-        return false;
-
-      const context = params.context === '~' ? session?.context : params.context;
-      const identifier = params.identifier === '~' ? session?.identifier : params.identifier;
-
-      if(!context || !identifier)
-        return false;
-
-      // clean up the path and add a '/' prefix
-      const path = cleanPath(params.path);
-      const foreign = !session || session.user !== params.user;
-
-      // create the path
-
-      const absPath = makePath(params.user, params.root, params.context, params.identifier, path);
-      const publicPath =`/${params.user}/public/`;
-
-      // if it's us, and we're a user session, always write access
-      if(!foreign && session.context === 'user')
-        return { perm: 'write', path: absPath };
-
-      // if it's a foreign user, just check to see if it's a public path
-      if(foreign)
-        return absPath.startsWith(publicPath) ? { perm: 'read', path: absPath } : false;
-
-      /** `/${session-user}` */
-      const basePath = `/${session.user}`;
-      /** `${app}/` or `secure/${hash}/` */
-      const appPath = `${context}/` + (context === 'secure' ? `${identifier}/` : '');
-
-      const writePaths = [
-        // `/${session-user}/appdata/${app}/`
-        basePath + '/appdata/' + appPath,
-        // `/${session-user}/public/appdata/${app}/`
-        basePath + '/public/appdata/' + appPath,
-        // `/${session-user}/collections/${coll}/${app}/`
-        ...session.collections.map(coll => basePath + `/collections/${coll}/` + appPath)
-      ];
-
-      if(writePaths.find(p => absPath.startsWith(p)))
-        return { perm: 'write', path: absPath };
-
-      const readPaths = [
-        // `/${route-user}/public/`
-        publicPath,
-        // `/${session-user}/collections/${coll}/`
-        ...session.collections.map(coll => basePath + `/collections/${coll}/`)
-      ];
-
-      if(readPaths.find(p => absPath.startsWith(p)))
-        return { perm: 'read', path: absPath };
-
-      return false;
-    }
-
     /**
      * For the following route: `/:root(public|private|root|collections)/:path(.*)'
      *
@@ -214,19 +215,23 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
     router.use('/:root(public|private|root|collections)/:path(.*)',
       handleError('file-store'),
       new Router<Req>()
-        .use('', async (req, next) => {
-          if(!this.#validateScopes(req.session!.scopes, '/' + req.params.path!))
-            throw new MalformedError('Path out of scope(s)!');
+        .use('', (rreq, next) => {
+          const req = rreq as unknown as TinyRouteRequest;
 
-          req.context.path = await this.parsePath(req.user!.username, req.params.path!);
+          const validated = this.validatePath(req.params, req.context.user.id!, req.session);
+          if(!validated)
+            throw new ForbiddenError('Requested path is inaccessible.');
+
+          req.context.path = validated.path;
+          req.context.perm = validated.perm;
 
           return next();
         })
         .get('', async req => {
           if(req.query.info == undefined)
-            return await this.read(req, req.user!.username, req.context.path as string);
+            return await this.read(req, req.context.path as string);
 
-          const info = await this.getInfo(req.user!.username, req.context.path as string)
+          const info = await this.getInfo(req.context.path as string)
 
           if(!info)
             throw new NotFoundError();
@@ -234,26 +239,30 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
           return json(info);
         })
         .put('', async req => {
-          await this.write(req.user!.username, req.context.path as string, req.stream || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
+          if(req.context.perm !== 'write')
+            throw new ForbiddenError('Read access only.');
+
+          await this.write(req.context.path as string, req.stream || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
+
           return noContent();
         })
         .delete('', async req => {
-          await this.delete(req.user!.username, req.context.path as string);
+          if(req.context.perm !== 'write')
+            throw new ForbiddenError('Read access only.');
+
+          await this.delete(req.context.path as string);
+
           return noContent();
         }));
 
+    router.get('/list-files/:root(public|private|root|collections)?/:path(.*)?', async req => {
+      const rreq = req as unknown as TinyRouteRequest;
+      const validation = this.validatePath(rreq.params, rreq.context.user.id!, req.session);
+      if(!validation || validation.perm !== 'write')
+        throw new ForbiddenError('Cannot index requested path.');
 
-
-    router.get('/list-files', async req => {
-      if(!this.#validateScopes(req.session!.scopes, req.params.path!))
-        throw new MalformedError('Path out of scope(s)!');
-
-      const path = await this.parsePath(req.user!.username, req.params.path!);
-
-      return json(await this.list(req.user!.username, path, Number(req.query.page) || 0, Boolean(req.query.advance)));
+      return json(await this.list(validation.path, Number(req.query.page) || 0, Boolean(req.query.advance)));
     });
-
-    router.get('/list-files/:root(public|private|root|collections)/:path(.*)?')
 
     router.get('/storage-stats', async req => json(!req.user ? null : await this.fs.getStorageStats(req.user)))
 
@@ -264,7 +273,17 @@ export class FileApi<Req extends TinyRequest = TinyRequest> extends Api<Req> {
       if(!body || !(body instanceof Array))
         throw new MalformedError('Body must be a string[]!');
 
-      const validated = body.map(path => validatePath({ ...req.params, path }, req.session)).filter(Boolean) as { perm: 'read' | 'write'; path: string; }[];
+      const validated = body.map(path => {
+        if(!path.startsWith('/'))
+          path = '/' + path;
+
+        const root = roots.find(r => path.startsWith('/' + r)) || 'root';
+
+        if(path.startsWith('/' + root))
+          path = path.slice(0, root.length + 1);
+
+        return this.validatePath({ ...req.params, root, path }, req.context.user.id!, req.session);
+      }).filter(Boolean) as { perm: 'read' | 'write'; path: string; }[];
 
       if(!validated.length)
         return json([]);

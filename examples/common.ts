@@ -4,6 +4,7 @@ import { DB } from '../deps/sqlite.ts';
 import { Router, json } from '../api/mod.ts';
 
 import { MalformedError } from '../common/errors.ts';
+import { TinyContextualRequest } from '../common/types.ts';
 import { ScopedKeyValueStore } from '../common/scoped-key-value-store.ts';
 
 import { AuthRequest, AuthUser } from '../auth/auth-types.ts';
@@ -77,16 +78,14 @@ const fileStore = new DiskFileStore({ storageRoot });
 const coreApi = new CoreApi(authDb, 'complete (std)');
 const authApi = new AuthApi(authDb);
 const dbApi = new TinyDbApi(tinyDb,
-  validateUserSession(authDb),
   req => {
     const playground = renderPlaygroundPage({ endpoint: new URL(req.url).pathname });
 
     return new Response(playground, { status: 200, headers: { 'Content-Type': 'text/html' } });
   });
 
-const fileApi = new FileApi<SuperRequest>(fileDb,
-  fileStore,
-  validateUserSession(authDb));
+const fileApi = new FileApi<TinyContextualRequest>(fileDb,
+  fileStore);
 
 
 const getUserFromAddress = async (addr: string): Promise<AuthUser | null> => {

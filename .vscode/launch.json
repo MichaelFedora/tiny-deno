@@ -4,7 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        {
+          {
             "request": "launch",
             "name": "Run STD Example",
             "type": "pwa-node",
@@ -15,6 +15,27 @@
                 "run",
                 "--inspect",
                 "--allow-all"
+            ],
+            "args": [
+              "--cors"
+            ],
+            "attachSimplePort": 9229
+        },
+        {
+            "request": "launch",
+            "name": "Run Persistent STD Example",
+            "type": "pwa-node",
+            "program": "${workspaceFolder}/examples/std.ts",
+            "cwd": "${workspaceFolder}",
+            "runtimeExecutable": "deno",
+            "runtimeArgs": [
+                "run",
+                "--inspect",
+                "--allow-all"
+            ],
+            "args": [
+              "--persist",
+              "--cors"
             ],
             "attachSimplePort": 9229
         }

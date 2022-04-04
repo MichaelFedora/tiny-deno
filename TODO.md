@@ -13,3 +13,7 @@
 a third party to verify, e.g. the blockchain. Should be implemented in the auth module
   - this should also provide a secure/private appdata folder which cannot be accessed by any other app (instead of generic folders)
 - make file api have locks and etag/version checks for race conditions (similar to gaia)
+
+- migrate REST api to [graphql->SOFA](https://www.sofa-api.com/)[^1] like implementation
+
+[^1]: https://github.com/Urigo/SOFA

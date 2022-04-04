@@ -162,7 +162,7 @@ of users loading junk data.
 
 ## Configuration
 
-Create a JSON file called `config.json`, with the following (annotated) schema:
+Create a JSON file called `config.json`, with the following (typescript) schema:
 
 ```typescript
 interface Config {
@@ -171,6 +171,7 @@ interface Config {
 
   sessionExpTime: number; // how much time (in ms) for the sessions to expire
   whitelist?: string[]; // a white list of usernames to allow
+  serverName?: string; // the name of the server to be used in tokens -- defaults to "tiny"
 }
 ```
 

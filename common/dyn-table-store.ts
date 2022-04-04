@@ -1,24 +1,5 @@
-import type DynTable from './dyn-table.ts';
-
-export enum ColumnType {
-  Boolean = 'Boolean',
-  String = 'String',
-  Int = 'Int',
-  Float = 'Float',
-  ID = 'ID',
-
-  Date = 'Date',
-  JSON = 'JSON'
-}
-
-export interface TableSchema<T = Record<string, unknown>> {
-  readonly id?: string;
-  name?: string;
-
-  columns: Record<'id' | keyof T, { type: ColumnType; nullable: boolean; meta?: string }>;
-  indexes: { fields: readonly ('id' | keyof T)[], unique?: boolean }[];
-  readonly version?: number;
-}
+import { type DynTable, TableSchema, ColumnType } from './dyn-table.ts';
+export { type TableSchema, ColumnType };
 
 export abstract class DynTableStore {
 
@@ -26,7 +7,7 @@ export abstract class DynTableStore {
 
   public abstract init(): Promise<void>;
 
-  public abstract create<T = Record<string, unknown>>(table: string, schema: TableSchema<T>): Promise<void>;
+  public abstract create<T = Record<string, unknown>>(schema: TableSchema<T>): Promise<DynTable<T>>;
   public abstract define<T = Record<string, unknown>>(table: string): Promise<TableSchema<T> | null>;
   public abstract list(prefix?: string): Promise<TableSchema[]>;
 
@@ -35,14 +16,14 @@ export abstract class DynTableStore {
    * @param table The table name
    * @param schema The schema
    */
-  public abstract redefine<T = Record<string, unknown>>(table: string, schema: TableSchema<T>): Promise<void>;
+  public abstract redefine<T = Record<string, unknown>>(table: string, schema: Omit<TableSchema<T>, 'name'>): Promise<DynTable<T>>;
   public abstract drop(table: string): Promise<void>;
 
   public abstract dropMany(tables: string[]): Promise<void>;
   public abstract dropPrefixed(prefix: string): Promise<void>;
 
   // deno-lint-ignore no-explicit-any
-  public abstract table<T = any>(table: string): DynTable<T>;
+  public abstract table<T = any>(table: string): Promise<DynTable<T> | null>;
 }
 
 export default DynTableStore;

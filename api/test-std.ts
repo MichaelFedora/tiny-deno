@@ -1,4 +1,4 @@
-import { Server } from 'https://deno.land/std@0.122.0/http/server.ts'
+import { Server } from 'https://deno.land/std@0.133.0/http/server.ts'
 
 import { text, json, noContent, redirect } from './util.ts';
 import Router from './router.ts';

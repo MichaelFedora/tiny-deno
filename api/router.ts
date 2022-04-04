@@ -201,7 +201,7 @@ export class Router<Req extends RequestStub = RequestStub> {
    * @param {string?} base The base url to append to the routes we are matching; used for sub-routers
    * @returns {Array<RouteHandler>} The path through the step list -- should be iterated through to process
    */
-  #pathfind<R extends Req = Req>(req: Partial<R> & SlimRequestStub, options?: { base?: string; matchType?: boolean }): { type: RouteStep['type'], handler: RouteHandler<R> }[] {
+  #pathfind<R extends Req = Req>(req: Partial<R> & SlimRequestStub, options?: { base?: string; matchType?: boolean }): { type: RouteStep['type']; route: string; handler: RouteHandler<R> }[] {
     let base = options?.base ?? '';
     const matchType = options?.matchType !== false;
 
@@ -209,7 +209,13 @@ export class Router<Req extends RequestStub = RequestStub> {
     if(base)
       base = '/' + base.replace(/^\/+|\/+$/g, '');
 
-    const path: { type: RouteStep['type'], handler: RouteHandler<R> }[] = [];
+    const path: {
+      // for options checking
+      type: RouteStep['type'];
+      // for debugging
+      route: string;
+      handler: RouteHandler<R>
+    }[] = [];
 
     for(const step of this.#steps) {
       // append the base to the route and remove any trailing `/`'s for the proper route to match against
@@ -223,11 +229,11 @@ export class Router<Req extends RequestStub = RequestStub> {
       const handler = step.handler;
 
       if(handler instanceof Router)
-        path.push(...(handler as Router<R>).#pathfind(req, { base: route }));
+        path.push(...(handler as Router<R>).#pathfind(req, { base: route, matchType }));
       else {
-        path.push({ type: step.type, handler: (req, next) => {
+        path.push({ type: step.type, route, handler: (req, next) => {
           // match the route params for utility reasons
-          req.params = parseParams(step.route, req.url);
+          req.params = parseParams(route, req.url);
           return handler(req, next);
         } });
       }
@@ -289,6 +295,8 @@ export class Router<Req extends RequestStub = RequestStub> {
     for(const p of path)
       if(p.type)
         methods.add(p.type);
+
+    methods.add('OPTIONS');
 
     return { methods: Array.from(methods.values()).join(', ') };
   }

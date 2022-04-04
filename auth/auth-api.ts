@@ -1,11 +1,11 @@
-import { isEqual } from '../deps/lodash.ts';
+import jose from '../deps/jose.ts';
 
 import { Router, json, text, noContent, redirect } from '../api/mod.ts';
 import { AuthError, ForbiddenError, MalformedError, NotFoundError } from '../common/errors.ts';
 import { handleError } from '../common/middleware.ts';
 import Api from '../common/api.ts';
 
-import { getSalt, hashPassword } from './auth-util.ts';
+import { getSalt, hashPassword, importSecret } from './auth-util.ts';
 import { AuthSession, AuthUser, AuthRequest, Handshake, MasterKey } from './auth-types.ts';
 import { validateUserSession} from './auth-middleware.ts';
 import AuthDb from './auth-db.ts';
@@ -14,40 +14,71 @@ import AuthDb from './auth-db.ts';
 export class AuthApi extends Api {
 
   readonly #whitelist: readonly string[];
-  readonly #requireScopes: boolean;
+  readonly #allowRegistration: boolean;
   readonly #allowHandshakes: boolean;
   readonly #allowMasterKeys: boolean;
   readonly #handshakeExpTime: number;
+  readonly #sessionExpTime: number;
+  readonly #serverName: string;
 
   constructor(protected readonly db: AuthDb, config: {
       whitelist?: readonly string[];
-      requireScopes?: boolean;
+      allowRegistration?: boolean;
       allowHandshakes?: boolean;
       allowMasterKeys?: boolean;
       handshakeExpTime?: number;
+      sessionExpTime?: number;
+      serverName?: string;
     } = { }) {
 
     super();
 
-    this.#whitelist = config.whitelist?.slice() || [];
-    this.#requireScopes = config.requireScopes || true;
-    this.#allowHandshakes = config.allowHandshakes || true;
-    this.#allowMasterKeys = config.allowMasterKeys || true;
-    this.#handshakeExpTime = config.handshakeExpTime || 300000; // 5 minutes
+    this.#whitelist = config.whitelist?.slice() ?? [];
+    this.#allowRegistration = config.allowRegistration ?? true;
+    this.#allowHandshakes = config.allowHandshakes ?? true;
+    this.#allowMasterKeys = config.allowMasterKeys ?? true;
+    this.#handshakeExpTime = config.handshakeExpTime ?? 300000; // 5 minutes
+    this.#sessionExpTime = config.sessionExpTime ?? 604800000; // 1 week
+    this.#serverName = config.serverName ?? 'tiny';
   }
 
-  #validateScopes(scopes: string): readonly string[] {
-    let ret: readonly string[];
+  async #createSessionJWT(sess: string): Promise<string | undefined>;
+  async #createSessionJWT(sess: AuthSession): Promise<string>;
+  async #createSessionJWT(sess: string | AuthSession): Promise<string | undefined>;
+  async #createSessionJWT(sess: string | AuthSession): Promise<string | undefined> {
+    if(typeof sess !== 'object')
+      sess = (await this.db.getSession(sess))!;
 
-    try {
-      ret = JSON.parse(scopes);
-      if(!(ret instanceof Array) || (this.#requireScopes && !ret.length) || ret.findIndex(a => !a.startsWith('/')) >= 0)
-        throw new Error();
-    } catch(_) {
-      throw new MalformedError('Could not parse scopes query; should be a JSON array of paths that start with "/".')
-    }
+    if(!sess)
+      return undefined;
 
-    return ret;
+    const jwt = new jose.SignJWT({ jti: sess.id! })
+      .setProtectedHeader({ alg: 'HS384' })
+      .setIssuer(this.#serverName)
+      .setSubject(sess.user)
+      .setIssuedAt(Math.floor(sess.created / 1000))
+      .setExpirationTime(Math.floor((sess.created + this.#sessionExpTime) / 1000));
+
+    return await jwt.sign(await importSecret(sess.secret));
+  }
+
+  async #createMasterKeyJWT(key: string): Promise<string | undefined>;
+  async #createMasterKeyJWT(key: MasterKey): Promise<string>;
+  async #createMasterKeyJWT(key: string | MasterKey): Promise<string | undefined>;
+  async #createMasterKeyJWT(key: string | MasterKey): Promise<string | undefined> {
+    if(typeof key !== 'object')
+      key = (await this.db.getMasterKey(key))!;
+
+    if(!key)
+      return undefined;
+
+    const jwt = new jose.SignJWT({ jti: key.id! })
+      .setProtectedHeader({ alg: 'HS384' })
+      .setIssuer(this.#serverName)
+      .setSubject(key.user)
+      .setIssuedAt(Math.floor(key.created / 1000));
+
+    return await jwt.sign(await importSecret(key.secret));
   }
 
   // #region core
@@ -64,7 +95,8 @@ export class AuthApi extends Api {
     if(user.pass !== pass)
       throw new AuthError('Username / password mismatch.');
 
-    return await this.db.addSession(user.id!, ['!user', '/']);
+    const sid = await this.db.addSession(user.id!, 'user', username);
+    return (await this.#createSessionJWT(sid))!;
   }
 
   async register(username: string, password: string): Promise<void> {
@@ -97,8 +129,8 @@ export class AuthApi extends Api {
     await this.db.delManySessions(!keep ? sids : sids.filter(sid => sid !== keep));
   }
 
-  async sessions(user: AuthUser): Promise<AuthSession[]> {
-    return await this.db.getSessionsForUser(user.id!);
+  async sessions(user: AuthUser): Promise<Omit<AuthSession, 'secret'> []> {
+    return await this.db.getSessionsForUser(user.id!).then(res => res.map(s => ({ ...s, secret: undefined })));
   }
 
   async deleteSession(id: string, user: AuthUser): Promise<void> {
@@ -116,7 +148,7 @@ export class AuthApi extends Api {
   }
 
   async refresh(session: AuthSession): Promise<string> {
-    const sess = await this.db.addSession(session.user, session.scopes);
+    const sess = await this.db.addSession(session.user, session.context, session.identifier, session);
     await this.db.delSession(session.id!);
     return sess;
   }
@@ -129,32 +161,52 @@ export class AuthApi extends Api {
 
   // #region handshakes
 
-  async startHandshake(redirect: string, scopes: readonly string[], username?: string): Promise<string> {
-    const hsId = await this.db.addHandshake({ redirect, scopes, created: Date.now() } as Handshake);
+  async startHandshake(redirect: string, app: string, extra?: Partial<{
+    permissions: readonly string[];
+    collections: readonly string[];
+  }>, username?: string): Promise<string> {
+    const hsId = await this.db.addHandshake({
+      app,
+      redirect,
+
+      permissions: extra?.permissions ?? [],
+      collections: extra?.collections ?? [],
+
+      created: Date.now()
+    } as Handshake);
 
     return `/handshake?handshake=${hsId}${username ? `&username=${username}` : ''}`;
   }
 
-  async completeHandshake(redirect: string, scopes: readonly string[], code: string): Promise<string> {
+  async completeHandshake(redirect: string, app: string, code: string, extra?: Partial<{
+    permissions: readonly string[];
+    collections: readonly string[];
+  }>): Promise<string> {
+
     const handshake = await this.db.getHandshakeFromCode(code);
     if(!handshake)
       throw new NotFoundError('Handshake not found with the given code!');
 
-    console.log(handshake.redirect !== redirect, handshake.scopes, scopes);
-
     await this.db.delHandshake(handshake.id!);
-    if(handshake.redirect !== redirect || !isEqual(handshake.scopes, scopes))
+    if(handshake.redirect !== redirect)
       throw new MalformedError('Handshake/body mismatch!');
 
     const user = await this.db.getUser(handshake.user!);
     if(!user)
       throw new NotFoundError('User not found!');
 
-    return await this.db.addSession(user.id!, handshake.scopes);
+    if(handshake.app !== app ||
+      JSON.stringify(extra?.permissions ?? []) !== JSON.stringify(handshake.permissions) ||
+      JSON.stringify(extra?.collections ?? []) !== JSON.stringify(handshake.collections))
+      throw new MalformedError('Handshake/body mismatch!');
+
+    const sid = await this.db.addSession(user.id!, handshake.app, user.username);
+
+    return (await this.#createSessionJWT(sid))!;
   }
 
   async testHandshake(id: string, session: AuthSession): Promise<Handshake> {
-    if(!session.scopes.includes('!user'))
+    if(session.context !== 'user')
       throw new ForbiddenError('Must be a user!');
 
     const handshake = await this.db.getHandshake(id);
@@ -193,7 +245,7 @@ export class AuthApi extends Api {
 
   // #region masterkeys
 
-  async generateSessionFromMasterKey(key: string, scopes: readonly string[]): Promise<string> {
+  async generateSessionFromMasterKey(key: string, context: string, identifier: string, extra?: Partial<Pick<AuthSession, 'collections' | 'permissions'>>): Promise<string> {
 
     const masterKey = await this.db.getMasterKey(key);
     if(!masterKey)
@@ -203,15 +255,40 @@ export class AuthApi extends Api {
     if(!user)
       throw new NotFoundError('User not found!');
 
-    return await this.db.addSession(user.id!, scopes);
+    const sid = await this.db.addSession(user.id!, context, identifier, extra);
+
+    return (await this.#createSessionJWT(sid))!;
   }
 
-  async getMasterKeys(user: string): Promise<MasterKey[]> {
-    return await this.db.getMasterKeysForUser(user);
+  async getMasterKeys(user: string): Promise<{
+    id: string;
+    name?: string;
+    created: number;
+    token: string;
+  }[]> {
+    const keys =  await this.db.getMasterKeysForUser(user);
+
+    const ret: Promise<{
+      id: string;
+      name?: string;
+      created: number;
+      token: string;
+    }>[] = [];
+
+    for(const k of keys) {
+      ret.push(this.#createMasterKeyJWT(k).then(token => ({
+        id: k.id!,
+        name: k.name ?? '',
+        created: k.created,
+        token
+      })));
+    }
+
+    return await Promise.all(ret);
   }
 
   async addMasterKey(user: string, name = ''): Promise<string> {
-    return await this.db.addMasterKey({ user, name, created: Date.now() });
+    return await this.db.addMasterKey(user, name);
   }
 
   async getMasterKey(user: string, id: string): Promise<MasterKey | null> {
@@ -246,7 +323,7 @@ export class AuthApi extends Api {
       if(!body || typeof body !== 'object' || !body.username || !body.password)
         throw new MalformedError('Must pass a { username, password } object!');
 
-      return json(await this.login(body.username, body.password));
+      return text(await this.login(body.username, body.password));
     });
 
     router.post('/register', async req => {
@@ -259,8 +336,15 @@ export class AuthApi extends Api {
       return noContent();
     });
 
+    router.get('/can-register', () => {
+      if(!this.#allowRegistration)
+        throw new ForbiddenError();
+
+      return noContent();
+    });
+
     router.post('/change-pass', requireUserSession, async (req: AuthRequest) => {
-      if(!req.session!.scopes.includes('!user'))
+      if(req.session!.context !== 'user')
         throw new ForbiddenError('Must be a user!');
 
       const body: { password: string; newpass: string } = await req.json();
@@ -274,7 +358,7 @@ export class AuthApi extends Api {
     });
 
     router.use('/sessions', requireUserSession, (req, next) => {
-      if(!req.session!.scopes.includes('!user'))
+      if(req.session!.context !== 'user')
         throw new ForbiddenError('Must be a user!');
 
       return next();
@@ -310,72 +394,75 @@ export class AuthApi extends Api {
       handshakeRouter.use(handleError('auth-handshake'));
 
       handshakeRouter.get('/start', async req => {
-        if(!req.query || !req.query.redirect || (!req.query.scopes && this.#requireScopes))
-          throw new MalformedError('Must have ?redirect={url}<&scopes=["/scopes"]> query.');
+        if(!req.query?.redirect || !req.query.app)
+          throw new MalformedError('Must have ?redirect={url}&app={app}<&permissions=[]><&collections=[]> query.');
 
-        const scopes = req.query.scopes ? this.#validateScopes(req.query.scopes) : [];
+        const permissions = JSON.parse(req.query.permissions ?? '[]');
+        const collections = JSON.parse(req.query.collections ?? '[]');
 
-        return redirect(await this.startHandshake(req.query.redirect, scopes, req.query.username));
+        return redirect(await this.startHandshake(req.query.redirect, req.query.app, { permissions, collections }));
       });
 
       handshakeRouter.post('/complete', async req => {
         const body: {
-          redirect: string;
-          scopes: string[];
           code: string;
-        } = await req.json();
-        if(!body || typeof body !== 'object' || !body.redirect || (this.#requireScopes && !body.scopes) || !body.code)
-          throw new MalformedError('Body should contain: { redirect, scopes, code }!');
 
-        return text(await this.completeHandshake(body.redirect, body.scopes, body.code));
+          app: string;
+          redirect: string;
+
+          permissions?: string[];
+          collections?: string[];
+        } = await req.json();
+
+        if(!body || typeof body !== 'object' || !body.redirect || !body.app || !body.code)
+          throw new MalformedError('Body should contain: { redirect, app, code, collections?, permissions? }!');
+
+        return text(await this.completeHandshake(body.redirect, body.app, body.code, { collections: body.collections, permissions: body.permissions }));
       });
 
       handshakeRouter.use('/:id', requireUserSession, async (req, next) => {
-        if(!req.session!.scopes.includes('!user'))
+        if(req.session!.context !== 'user')
           throw new ForbiddenError('Must be a user!');
-
-        console.log(req.params, req.query);
 
         req.handshake = await this.testHandshake(req.params.id!, req.session!);
         return next();
       });
 
       handshakeRouter.get('/:id', req => json({
+        app: req.handshake!.app,
         redirect: req.handshake!.redirect,
-        scopes: req.handshake!.scopes
+
+        permissions: req.handshake!.permissions,
+        collections: req.handshake!.collections,
+
+        created: req.handshake!.created
       }));
 
       handshakeRouter.get('/:id/approve', async req => redirect(await this.approveHandshake(req.handshake!, req.user!)));
       handshakeRouter.get('/:id/cancel', async req => redirect(await this.cancelHandshake(req.handshake!)));
 
       router.use('/handshake', handshakeRouter);
-
-      router.post('/session', async req => {
-        const body: {
-          redirect: string;
-          scopes: string[];
-          code: string;
-        } = await req.json();
-        if(!body || typeof body !== 'object' || !body.redirect || (this.#requireScopes && !body.scopes) || !body.code)
-          throw new MalformedError('Body should contain: { redirect, scopes, code }!');
-
-        return text(await this.completeHandshake(body.redirect, body.scopes, body.code));
-      });
     }
 
+    /** !@todo! redo with the new token format */
     if(this.#allowMasterKeys) {
       const masterKeyRouter = new Router<AuthRequest>();
       masterKeyRouter.use(handleError('auth-master-key'));
 
       masterKeyRouter.post('/:id/generate-session', async req => {
-        if(!req.query.scopes)
-          throw new MalformedError('?scopes=[..] required!');
+        const body: {
+          context: string;
+          identifier: string;
+        } & Partial<Pick<AuthSession, 'collections' | 'permissions'>> = await req.json();
 
-        return json(await this.generateSessionFromMasterKey(req.params.id!, this.#validateScopes(req.query.scopes)));
+        if(!body || typeof body !== 'object' || !body.context || !body.identifier || (body.collections && !(body.collections instanceof Array)) || (body.permissions && !(body.permissions instanceof Array)))
+          throw new MalformedError('Body should contain: { context, identifier, collections?, permissions? }');
+
+        return json(await this.generateSessionFromMasterKey(req.params.id!, body.context, body.identifier, body));
       });
 
       masterKeyRouter.use(requireUserSession, (req, next) => {
-        if(!req.session!.scopes.includes('!user'))
+        if(req.session!.context !== 'user')
           throw new ForbiddenError('Must be a user!');
 
         return next();

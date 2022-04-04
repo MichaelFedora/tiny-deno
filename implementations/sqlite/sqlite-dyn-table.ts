@@ -6,7 +6,7 @@ import { DB } from '../../deps/sqlite.ts';
 import SQLiteClient from './clients/wasm-sqlite-client.ts';
 
 import type { SearchOptions, BatchOptions } from '../../common/types.ts';
-import DynTable from '../../common/dyn-table.ts';
+import { DynTable, TableSchema, ColumnType } from '../../common/dyn-table.ts';
 
 import { mapToEntries, mapToInsert, compileQuery } from '../../db/db-util.ts';
 
@@ -16,10 +16,10 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
 
   protected readonly client: SQLiteClient;
 
-  constructor(protected readonly db: DB, table: string) {
-    super(table);
+  constructor(protected readonly db: DB, schema: TableSchema) {
+    super(schema);
 
-    this.client = new SQLiteClient(db, 'dyn-tbl][' + table);
+    this.client = new SQLiteClient(db, 'dyn-tbl][' + this.schema.name!);
   }
 
   #encode(value: Partial<T>): Record<string, string | number | boolean | null> {
@@ -28,6 +28,9 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
       return record;
 
     for(const key in value) {
+      if(!this.schema.columns[key])
+        continue;
+
       if(Scalars.includes(typeof value[key] as typeof Scalars[0]) || value[key] == null)
         record[key] = value[key] as any;
       else
@@ -44,12 +47,34 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
     const record = { } as T;
 
     for(const key in value) {
+      if(!this.schema.columns[key])
+        continue;
+
+      // take care of null/undefined values
+      if(value[key] == null) {
+        (record as Record<string, unknown>)[key] = value[key];
+        continue;
+      }
+
       let v;
 
-      try {
-        v = JSON.parse(value[key]);
-      } catch {
-        v = value[key];
+      switch(this.schema.columns[key].type) {
+        // scalars
+        case ColumnType.Boolean: v = Boolean(value[key] && /1|true/i.test(value[key])); break;
+        case ColumnType.String: v = String(value[key]); break;
+        case ColumnType.Int: v = Number.parseInt(value[key]); break;
+        case ColumnType.Float: v = Number(value[key]); break;
+        case ColumnType.ID: v = String(value[key]); break;
+
+        // complex
+        case ColumnType.Date: v = new Date(Number.parseInt(value[key]) || value[key]); break;
+        case ColumnType.JSON:
+          try {
+            v = JSON.parse(value[key]);
+          } catch {
+            v = value[key];
+          }
+          break;
       }
 
       (record as Record<string, unknown>)[key] = v;
@@ -59,7 +84,7 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
   }
 
   async all(filter?: Partial<T>): Promise<T[]> {
-    const base = `SELECT * FROM "${this.table}"`
+    const base = `SELECT * FROM "${this.schema.name}"`
 
     let rows: Record<string, string>[];
 
@@ -75,7 +100,7 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
   async search(search: SearchOptions<T>): Promise<T[]> {
     const { query, params } = search.query ? compileQuery<T>(search.query) : { query: '', params: [] };
 
-    let stmt = `SELECT ${search.projection?.join(',') || '*'} FROM "${this.table}"`;
+    let stmt = `SELECT ${search.projection?.join(',') || '*'} FROM "${this.schema.name}"`;
     if(query)
       stmt += ' WHERE ' + query;
 
@@ -102,7 +127,7 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
   }
 
   async one(id: string): Promise<T | null> {
-    const row = await this.client.one(`SELECT * FROM "${this.table}" WHERE id = $1;`, id);
+    const row = await this.client.one(`SELECT * FROM "${this.schema.name}" WHERE id = $1;`, id);
     return this.#decode(row);
   }
 
@@ -111,7 +136,7 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
 
     const { query, params } = mapToInsert({ id, ...this.#encode(input) });
 
-    const row = await this.client.one(`INSERT INTO "${this.table}" ${query} RETURNING *;`, ...params);
+    const row = await this.client.one(`INSERT INTO "${this.schema.name}" ${query} RETURNING *;`, ...params);
 
     return this.#decode(row)!;
   }
@@ -119,12 +144,12 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
   async put(id: string, input: Partial<T>): Promise<T> {
     const { query, params } = mapToEntries(this.#encode(input), true);
 
-    const row = await this.client.one(`UPDATE "${this.table}" SET ${query} WHERE id = $${params.length + 1} RETURNING *;`, ...params, id);
+    const row = await this.client.one(`UPDATE "${this.schema.name}" SET ${query} WHERE id = $${params.length + 1} RETURNING *;`, ...params, id);
     return this.#decode(row)!;
   }
 
   async del(id: string): Promise<void> {
-    await this.client.exec(`DELETE FROM "${this.table}" WHERE id = $1`, id);
+    await this.client.exec(`DELETE FROM "${this.schema.name}" WHERE id = $1`, id);
   }
 
   async batch(ops: BatchOptions<T>): Promise<BatchOptions<T>> {
@@ -133,13 +158,13 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
     if(!ops.length)
       return [];
 
-      this.db.transaction(() => {
+    this.db.transaction(() => {
       for(const op of ops) {
 
         if(op.type === 'put') {
           const { query, params } = mapToEntries(this.#encode(op.value), true);
 
-          const stmt = this.db.prepareQuery(`UPDATE "${this.table}" SET ${query} WHERE id = $${params.length + 1} RETURNING *;`);
+          const stmt = this.db.prepareQuery(`UPDATE "${this.schema.name}" SET ${query} WHERE id = $${params.length + 1} RETURNING *;`);
           try {
             stmt.execute([ ...params, op.key ]);
 
@@ -150,7 +175,7 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
             stmt.finalize();
           }
         } else if(op.type == 'del') {
-          const stmt = this.db.prepareQuery(`DELETE FROM "${this.table}" WHERE id = $1`);
+          const stmt = this.db.prepareQuery(`DELETE FROM "${this.schema.name}" WHERE id = $1`);
           try {
             stmt.execute([op.key]);
 
@@ -169,7 +194,10 @@ export class SQLiteDynTable<T = any> extends DynTable<T> {
   }
 
   async delMany(ids: readonly string[]): Promise<void> {
-    await this.client.exec(`DELETE FROM "${this.table}" WHERE ${ids.map((_, i) => `id = $${i + 1}`).join(' OR ')}`, ...ids);
+    if(!ids.length)
+      return;
+
+    await this.client.exec(`DELETE FROM "${this.schema.name}" WHERE ${ids.map((_, i) => `id = $${i + 1}`).join(' OR ')}`, ...ids);
   }
 }
 
@@ -181,7 +209,15 @@ Deno.test({
   async fn(): Promise<void> {
     const db = new DB(':memory:');
 
-    const dyn = new SQLiteDynTable<{ id: string; key: string; value?: string }>(db, 'DynTable');
+    const dyn = new SQLiteDynTable<{ id: string; key: string; value?: string }>(db, {
+      name: 'DynTable',
+      columns: {
+        id: { type: ColumnType.ID, nullable: false, meta: 'ID!' },
+        key: { type: ColumnType.String, nullable: false, meta: 'String!' },
+        value: { type: ColumnType.JSON, nullable: true, meta: 'JSON' }
+      },
+      indexes: []
+    });
     dyn['client']['debug'] = true;
 
     await dyn['client'].exec('CREATE TABLE IF NOT EXISTS DynTable (id TEXT PRIMARY KEY, key TEXT NOT NULL, value TEXT);');

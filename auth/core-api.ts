@@ -31,7 +31,7 @@ export class CoreApi extends Api<AuthRequest> {
     if(!sess)
       throw new ForbiddenError('Not authenticated!');
 
-    if(!sess.scopes.includes('!user'))
+    if(sess.context !== 'user')
       throw new ForbiddenError('Must be a user!');
 
     if(await hashPassword(pass, user.salt) !== user.pass)

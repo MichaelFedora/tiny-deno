@@ -20,13 +20,12 @@ export class WebFingerApi<Req extends TinyRequest> extends Api<Req> {
   get separatorRegex(): RegExp {
     const other = this.symbols.filter(s => s !== this.separator).map(s => '\\' + s).join('');
     const regExp = new RegExp(`^([\\w${other}]+)(?:\\${this.separator}([\\w${other}]+))?`);
-    console.log(`^([\\w${other}]+)(?:\\${this.separator}([\w${other}]+))?`, regExp);
     return regExp;
   }
 
   constructor(
     protected readonly kv: KeyValueStore<WebFingerInfo[]>,
-    protected readonly getUser: (id: string) => Promise<User | null>,
+    protected readonly getUser: (username: string) => Promise<User | null>,
     protected readonly validateSession: RouteHandler<Req>,
     protected readonly separator = '~') {
 

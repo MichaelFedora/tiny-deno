@@ -1,1 +1,1 @@
-export { assert, assertEquals, assertRejects } from '../deps.ts';
+export { assert, assertEquals, assertRejects, serveFile, joinPath } from '../deps.ts';

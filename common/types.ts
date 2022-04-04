@@ -112,6 +112,7 @@ export interface TinyRequest extends RequestStub {
   // deno-lint-ignore no-explicit-any
   json(): Promise<any>;
   text(): Promise<string>;
+  blob(): Promise<Blob>;
   readonly stream: ReadableStream<Uint8Array> | null;
 
   // BONUS (tiny)
@@ -123,7 +124,7 @@ export interface TinyRequest extends RequestStub {
 }
 
 export interface TinyContextualRequest extends TinyRequest {
-  context: { user: User; [key: string]: unknown };
+  context: { user: User; context: string; identifier: string; [key: string]: unknown };
   params: { context: string; identifier: string; [key: string]: string | undefined; }
 }
 

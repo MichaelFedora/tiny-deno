@@ -1,11 +1,13 @@
 // deno-lint-ignore-file no-explicit-any
-import { assertEquals } from '../../deps/std.ts';
+import { assert, assertEquals } from '../../deps/std.ts';
 import { DB, PreparedQuery } from '../../deps/sqlite.ts';
-import { cloneDeep, isEqual } from '../../deps/lodash.ts';
+import { isEqual } from '../../deps/lodash.ts';
 
 import SQLiteClient from './clients/wasm-sqlite-client.ts';
 
-import DynTableStore, { TableSchema, ColumnType } from '../../common/dyn-table-store.ts';
+import DynTableStore from '../../common/dyn-table-store.ts';
+import { type TableSchema, ColumnType } from '../../common/dyn-table.ts';
+
 import SQLiteDynTable from './sqlite-dyn-table.ts';
 
 export class SQLiteDynTableStore extends DynTableStore {
@@ -64,15 +66,15 @@ export class SQLiteDynTableStore extends DynTableStore {
     return Object.entries(columns).map(([k, v]) => `${k} ${v}`).join(',\n  ')
   }
 
-  public async create<T = Record<string, unknown>>(table: string, schema: TableSchema<T>): Promise<void> {
+  public async create<T = Record<string, unknown>>(schema: TableSchema<T>): Promise<SQLiteDynTable<T>> {
     schema.columns.id = { type: ColumnType.ID, nullable: false, meta: 'ID!' };
 
     await this.client.exec(`INSERT INTO "${this.schemaTable}" (name, columns, indexes) VALUES ($1, $2, $3)`,
-      table,
+      schema.name,
       JSON.stringify(schema.columns),
       JSON.stringify(schema.indexes));
 
-    const tbl = [this.prefix, table].join(this.separator);
+    const tbl = [this.prefix, schema.name].join(this.separator);
 
     if(!schema.indexes)
       await this.client.exec(`CREATE TABLE IF NOT EXISTS "${tbl}" (\n  `
@@ -98,6 +100,8 @@ export class SQLiteDynTableStore extends DynTableStore {
         }
       });
     }
+
+    return (await this.table(schema.name))!;
   }
 
   public async define<T = Record<string, unknown>>(table: string): Promise<TableSchema<T> | null> {
@@ -129,16 +133,16 @@ export class SQLiteDynTableStore extends DynTableStore {
     }));
   }
 
-  public async redefine<T = Record<string, unknown>>(table: string, schema: TableSchema<T>): Promise<void> {
+  public async redefine<T = Record<string, unknown>>(table: string, schema: Omit<TableSchema<T>, 'name'>): Promise<SQLiteDynTable<T>> {
     const old = await this.define(table);
     if(!old)
-      return await this.create(table, schema);
+      return await this.create({ ...schema, name: table });
 
-    schema.columns.id = { type: ColumnType.ID, nullable: false, meta: 'ID' };
+    schema.columns.id = { type: ColumnType.ID, nullable: false, meta: 'ID!' };
 
     if(isEqual({ columns: old.columns, indexes: old.indexes }, { columns: schema.columns, indexes: schema.indexes })) {
       // console.warn('Will not re-define to same definition:', table);
-      return;
+      return (await this.table(table))!;
     }
 
     const tbl = [this.prefix, table].join(this.separator);
@@ -195,6 +199,8 @@ export class SQLiteDynTableStore extends DynTableStore {
           stmt.finalize();
       }
     });
+
+    return (await this.table(table))!;
   }
 
   public async drop(table: string): Promise<void> {
@@ -275,8 +281,14 @@ export class SQLiteDynTableStore extends DynTableStore {
     });
   }
 
-  table<T = any>(table: string): SQLiteDynTable<T>  {
-    return new SQLiteDynTable<T>(this.db, [this.prefix, table].join(this.separator));
+  async table<T = any>(table: string): Promise<SQLiteDynTable<T> | null>  {
+    const schema = await this.define(table);
+    if(!schema)
+      return null;
+
+    schema.name = [this.prefix, schema.name].join(this.separator);
+
+    return new SQLiteDynTable<T>(this.db, schema);
   }
 }
 
@@ -291,31 +303,32 @@ Deno.test({
     dts['client']['debug'] = true;
     await dts.init();
 
+    const name = 'user_scope_KeyValue';
     const definition = {
+      name,
       columns: {
-        id: { type: ColumnType.ID, nullable: false, meta: 'ID!' },
+        id: { type: ColumnType.ID, nullable: false, meta: 'ID!' } as const,
         key: { type: ColumnType.String, nullable: false, meta: 'String!' },
         value: { type: ColumnType.JSON, nullable: true, meta: 'JSON' }
       },
-      indexes: []
+      indexes: [],
     };
 
-    const name = 'user_scope_KeyValue';
-    await dts.create(name, definition);
+    await dts.create(definition);
     // `id` gets added to `definition` above since it's passed by reference
 
     console.log('Testing definition of tables.');
-    assertEquals(await dts.define('user_scope_KeyValue'), { name, ...definition });
+    assertEquals(await dts.define('user_scope_KeyValue'), { ...definition, version: 0 });
 
     console.log('Definition: ', await dts.define('user_scope_KeyValue'));
 
     console.log('Testing existence in list.');
-    assertEquals(await dts.list(), [ { name, ...definition } ]);
+    assertEquals(await dts.list(), [ { ...definition, version: 0 } ]);
 
     const definition2 = {
       columns: {
         ...definition.columns,
-        user: { type: ColumnType.ID, nullable: false, meta: 'ID!' }
+        user: { type: ColumnType.ID, nullable: true, meta: 'ID' }
       },
       indexes: [{ fields: ['key', 'user'] as const, unique: true }],
       version: 0
@@ -327,7 +340,8 @@ Deno.test({
     console.log('New Definition: ', await dts.define(name));
 
     console.log('Testing getting the DynTable class');
-    const dt = dts.table(name);
+    const dt = await dts.table(name);
+    assert(dt,' Assert DynTable (definition) exists.');
     console.log('Quick DynTable test: add, list, remove');
     const item = await dt.add({ key: 'hi', value: 'wow!' });
     assertEquals(await dt.all(), [ { id: item.id, key: 'hi', value: 'wow!', user: null } ]);
@@ -340,14 +354,14 @@ Deno.test({
     assertEquals(await dts.define(name), null);
 
     console.log('Creating a couple tables...');
-    const manyDef = { columns: { id: { type: ColumnType.ID, nullable: false } }, indexes:[] } as TableSchema;
-    await dts.create('p_table_1', manyDef);
-    await dts.create('p_table_2', manyDef);
-    await dts.create('table_3', manyDef);
-    await dts.create('table_4', manyDef);
+    const manyDef = { columns: { id: { type: ColumnType.ID, nullable: false, meta: 'ID!' } }, indexes:[] } as Omit<TableSchema, 'name'>;
+    await dts.create({ name: 'p_table_1', ...manyDef });
+    await dts.create({ name: 'p_table_2', ...manyDef });
+    await dts.create({ name: 'table_3', ...manyDef });
+    await dts.create({ name: 'table_4', ...manyDef });
 
     console.log('Listing tables with prefix "p_"');
-    assertEquals(await dts.list('p_'), [ { name: 'p_table_1', ...manyDef }, { name: 'p_table_2', ...manyDef } ]);
+    assertEquals(await dts.list('p_'), [ { name: 'p_table_1', ...manyDef, version: 0 }, { name: 'p_table_2', ...manyDef, version: 0 } ]);
 
     console.log('Dropping tables with prefix "p_"');
     await dts.dropPrefixed('p_');

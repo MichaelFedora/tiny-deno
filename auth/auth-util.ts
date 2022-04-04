@@ -30,3 +30,12 @@ export async function hashPassword(pass: string, salt: string): Promise<string> 
 
   return btoa(String.fromCharCode(...new Uint8Array(hash)));
 }
+
+export async function generateSecret(): Promise<JsonWebKey> {
+  const key = await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-384' }, true, ['sign', 'verify']);
+  return await crypto.subtle.exportKey('jwk', key);
+}
+
+export async function importSecret(secret: JsonWebKey): Promise<CryptoKey> {
+  return await crypto.subtle.importKey('jwk', secret, { name: 'HMAC', hash: 'SHA-384' }, false, ['sign', 'verify']);
+}

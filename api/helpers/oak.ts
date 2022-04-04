@@ -1,4 +1,7 @@
-/** Stub declaration of an Oak Router Context */
+import Router from '../router.ts';
+import type { RouteHandler, SlimRequestStub } from '../types.ts';
+import { parseQuery } from '../util.ts';/** Stub declaration of an Oak Router Context */
+
 interface OakContextStub {
 
   state: Record<string, unknown>;
@@ -9,7 +12,7 @@ interface OakContextStub {
 
     body(options: { type: 'stream' }): { value: ReadableStream<Uint8Array> };
 
-    originalRequest: { request: Request };
+    originalRequest: SlimRequestStub;
   }
 
   response: {
@@ -53,10 +56,6 @@ stubCtx = realCtx;
 stubRouter = realRouter;
 // */
 
-import Router from '../router.ts';
-import type { RouteHandler } from '../types.ts';
-import { parseQuery } from '../util.ts';
-
 /**
  * Map a Tiny Request Handler to an Oak Middleware
  * @param handler the Tiny Request Handler
@@ -67,7 +66,7 @@ export function mapHandlerToOak(handler: RouteHandler): OakMiddlewareStub {
 
     // Map the request to be compatible
 
-    const req = Object.assign(ctx.request.originalRequest.request, {
+    const req = Object.assign(ctx.request.originalRequest, {
       stream: ctx.request.body({ type: 'stream' })?.value,
       query: parseQuery(ctx.request.url.href),
       params: ctx.params,

@@ -28,7 +28,7 @@ export abstract class AuthDb {
     });
   }
 
-  abstract addSession(user: string, scopes?: readonly string[]): Promise<string>;
+  abstract addSession(user: string, context: string, identifier: string, extra?: Partial<Pick<AuthSession, 'collections' | 'permissions'>>): Promise<string>;
   abstract getSession(session: string): Promise<AuthSession | null>;
   abstract delSession(session: string): Promise<void>;
   abstract delManySessions(sessions: readonly string[]): Promise<void>;
@@ -64,7 +64,7 @@ export abstract class AuthDb {
 
   // master keys
 
-  abstract addMasterKey(key: MasterKey): Promise<string>;
+  abstract addMasterKey(user: string, name?: string): Promise<string>;
   abstract putMasterKey(id: string, key: MasterKey): Promise<void>;
   abstract getMasterKey(id: string): Promise<MasterKey | null>;
   abstract delMasterKey(id: string): Promise<void>;

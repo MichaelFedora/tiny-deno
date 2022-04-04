@@ -1,6 +1,4 @@
-import { serveFile } from 'https://deno.land/std@0.123.0/http/file_server.ts';
-import { writableStreamFromWriter } from 'https://deno.land/std@0.123.0/streams/conversion.ts';
-import { join as joinPath } from 'https://deno.land/std@0.123.0/path/mod.ts';
+import { serveFile, joinPath } from '../../deps/std.ts';
 
 import { ForbiddenError, NotSupportedError, MalformedError, NotFoundError } from '../../common/errors.ts';
 import { TinyRequest } from '../../common/types.ts';
@@ -94,9 +92,9 @@ export class DiskFileStore extends FileStore {
 
     if(body instanceof ReadableStream || body instanceof Blob) {
       const file = await Deno.open(path, { write: true, create: true, truncate: true });
-      await (body instanceof Blob ? body.stream() : body).pipeTo(writableStreamFromWriter(file));
-      // nope - closed by writableStreamFromWriter
-      // Deno.close(file.rid);
+      await (body instanceof Blob ? body.stream() : body).pipeTo(file.writable);
+      if(Deno.resources()[file.rid])
+        Deno.close(file.rid);
     } else if(typeof body === 'string')
       await Deno.writeFile(path, (new TextEncoder()).encode(body), { create: true });
     else if(typeof body === 'object' && (body as ArrayBufferView)?.buffer)

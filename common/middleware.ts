@@ -1,7 +1,7 @@
 import { SlimRequestStub, SlimRouteHandler, RouteHandler } from '../api/types.ts';
 
 import { TinyError, MalformedError, ErrorTypes } from '../common/errors.ts';
-import { TinyRequest, TinyContextualRequest } from '../common/types.ts';
+import { TinyRequest, TinyContextualRequest, User } from '../common/types.ts';
 
 const trueArray = Object.freeze(['true', '1', 'yes']);
 
@@ -41,18 +41,24 @@ export function handleError<R extends SlimRequestStub>(action: string): SlimRout
   }
 }
 
-export function makeContextIdentifierValidator<R extends TinyRequest>(getContext: (via: 'username' | 'hash', identifier: string) => Promise<{ user: string, app?: string }>): RouteHandler<R & TinyContextualRequest> {
+export function makeContextIdentifierValidator<R extends TinyRequest>(getContext: (via: 'username' | 'hash', identifier: string) => Promise<{ user: User, app?: string } | null>): RouteHandler<R & TinyContextualRequest> {
   return async (req: R, next: () => Response | Promise<Response>) => {
 
     if(!req.params.context || !req.params.identifier)
       throw new MalformedError('This is a Context-Identifier route and a context or identifier is missing or invalid!');
 
-    const ctx = await getContext(req.params.context === 'secure' ? 'hash' : 'username', req.params.identifier as string);
+    if((req.params.context === '~' || req.params.identifier === '~') && !req.session)
+      throw new MalformedError('Cannot have `~` context/identifier if no session was passed!');
 
-    req.context.user = ctx.user;
+    req.context.context = req.params.context === '~' ? req.session!.context : req.params.context;
+    req.context.identifier = req.params.identifier === '~' ? req.session!.identifier : req.params.identifier;
 
-    if(ctx.app)
-      req.context.app = ctx.app;
+    const ctx = await getContext(req.context.context === 'secure' ? 'hash' : 'username', req.context.identifier as string);
+
+    req.context.user = ctx?.user;
+
+    if(ctx?.app)
+      req.context.app = ctx?.app;
 
     return next();
   };

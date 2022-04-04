@@ -127,7 +127,12 @@ export class HelpfulTinyDb extends TinyDb {
     fields: ParsedGQLField[];
   }): Promise<GQLSchema> {
 
-    const schema: TableSchema = { columns: { }, indexes: [] };
+    const schema: TableSchema = {
+      name: this.#table(user, scope, obj.name),
+      columns: { },
+      indexes: []
+    };
+
     for(const field of obj.fields) {
       const reference = reservedTypeNames.includes(field.rawType);
 
@@ -139,7 +144,7 @@ export class HelpfulTinyDb extends TinyDb {
       }
     }
 
-    await this.dynTableStore.create(this.#table(user, scope, obj.name), schema);
+    await this.dynTableStore.create(schema);
     schema.name = [this.prefix, user, scope, obj.name].filter(Boolean).join(this.dynTableStore.separator);
 
     return this.#translateSchema(schema);
@@ -173,11 +178,13 @@ export class HelpfulTinyDb extends TinyDb {
   }
 
   public async query<T = Record<string, any>>(user: string, scope: string, query: string): Promise<GQLResult<T>> {
-    const tables: GQLTable[] = [];
+    const tablePromises: Promise<GQLTable | null>[] = [];
 
     const schemas = await this.getSchemas(user, scope);
     for(const schema of schemas)
-      tables.push(new HelpfulGQLTable(this.dynTableStore.table(this.#table(user, scope, schema.name)), schema));
+      tablePromises.push(this.dynTableStore.table(this.#table(user, scope, schema.name)).then(table => table ? new HelpfulGQLTable(table, schema) : null));
+
+    const tables = (await Promise.all(tablePromises)).filter(Boolean) as GQLTable[];
 
     const schema = makeSchema(tables);
     return await execQuery(schema, query, {

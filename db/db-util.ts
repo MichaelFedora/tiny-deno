@@ -90,10 +90,10 @@ export function compileQuery<T = any>(query: Query<T>): { query: string; params:
   return { query: statements.map(stmt => `(${stmt})`).join(' AND '), params: vars };
 }
 
-/*
-@todo: add '$[key].[key]...' accessor, i.e. { 'foo.bar.baz': 2 }
-@todo: add '$key' accessor, i.e. { 'foo': { $eq: '$bar' } }
-*/
+/**
+ * @todo: add '$[key].[key]...' accessor, i.e. { 'foo.bar.baz': 2 }
+ * @todo: add '$key' accessor, i.e. { 'foo': { $eq: '$bar' } }
+ */
 
 /**
  * Test a value against a query expression

@@ -1,4 +1,4 @@
-import { renderPlaygroundPage } from 'https://deno.land/x/gql@1.1.1/graphiql/render.ts';
+import { renderPlaygroundPage } from '../deps-testing/graphiql.ts';
 
 import { DB } from '../deps/sqlite.ts';
 import { Router, json } from '../api/mod.ts';
@@ -6,6 +6,7 @@ import { Router, json } from '../api/mod.ts';
 import { MalformedError } from '../common/errors.ts';
 import { TinyContextualRequest } from '../common/types.ts';
 import { ScopedKeyValueStore } from '../common/scoped-key-value-store.ts';
+import { makeContextIdentifierValidator } from '../common/middleware.ts';
 
 import { AuthRequest, AuthUser } from '../auth/auth-types.ts';
 import { validateUserSession } from '../auth/auth-middleware.ts';
@@ -26,7 +27,7 @@ import SQLiteKeyValueStore from '../implementations/sqlite/sqlite-key-value-stor
 import SQLiteDynTableStore from '../implementations/sqlite/sqlite-dyn-table-store.ts';
 import DiskFileStore from '../implementations/native/disk-file-store.ts';
 
-type SuperRequest = Request & AuthRequest;
+type SuperRequest = Request & AuthRequest & TinyContextualRequest;
 
 if(Deno.args.includes('--persist')) {
   const it = Deno.readDir(Deno.cwd());
@@ -75,7 +76,7 @@ const storageRoot = Deno.args.includes('--persist')
 console.log('Using storage root:', storageRoot);
 const fileStore = new DiskFileStore({ storageRoot });
 
-const coreApi = new CoreApi(authDb, 'complete (std)');
+const coreApi = new CoreApi(authDb, 'complete');
 const authApi = new AuthApi(authDb);
 const dbApi = new TinyDbApi(tinyDb,
   req => {
@@ -101,10 +102,10 @@ const getUserFromAddress = async (addr: string): Promise<AuthUser | null> => {
 };
 
 const gaiaKv = new ScopedKeyValueStore(kv, 'gaia');
-const gaiaApi = new GaiaApi<SuperRequest>(fileDb, fileStore, gaiaKv, getUserFromAddress, 'tiny-std,0,' + serverName + ',blockstack_storage_please_sign');
+const gaiaApi = new GaiaApi<SuperRequest>(fileDb, fileStore, gaiaKv, getUserFromAddress, 'tiny-deno,0,' + serverName + ',blockstack_storage_please_sign');
 
 const webFingerKv = new ScopedKeyValueStore(kv, 'webFinger');
-const webFingerApi = new WebFingerApi<SuperRequest>(webFingerKv, id => authDb.getUser(id), validateUserSession(authDb));
+const webFingerApi = new WebFingerApi<SuperRequest>(webFingerKv, un => authDb.getUserFromUsername(un), validateUserSession(authDb));
 
 const router = new Router<SuperRequest>();
 router.use((req, next) => {
@@ -115,14 +116,37 @@ router.use((req, next) => {
 coreApi.compile(router);
 router.use('/auth', authApi.compile());
 
-router.use(dbApi.compile());
-router.use(fileApi.compile());
+const optionalValidateUserSession = validateUserSession(authDb, true);
+const contextIdentifierValidator = makeContextIdentifierValidator(async (via, identifier) => {
+  if(via === 'hash')
+    return null;
+
+  if(via === 'username') {
+    const user = await authDb.getUserFromUsername(identifier);
+    if(!user)
+      return null;
+
+    return { user };
+  }
+
+  return null;
+});
+
+router.use('/:context/:identifier/db', optionalValidateUserSession, contextIdentifierValidator, dbApi.compile());
+router.use('/:context/:identifier/files', optionalValidateUserSession, contextIdentifierValidator, fileApi.compile());
 router.use('/gaia', gaiaApi.compile());
 router.use(webFingerApi.compile());
 
 router.get('/dump/key-value', async () => json(await kv.search({ })));
+router.get('/dump/key-value/:key', async req => json(await kv.get(req.params.key!)));
 router.get('/dump/dyn', async () => json(await dts.list()));
-router.get('/dump/dyn/:table', async req => json(await dts.table(req.params.table!).all()));
+router.get('/dump/dyn/:table', async req => json(await dts.table(req.params.table!).then(tbl => tbl?.all())));
+router.get('/dump/dyn/:table/:key', async req => json(await dts.table(req.params.table!).then(tbl => tbl?.one(req.params.key!))));
+
+router.use((req, next) => {
+  console.log('404: ', req.url);
+  return next();
+});
 
 /** The base path for the frontend files */
 const basePath = await Deno.realPath(Deno.cwd() + '/implementations/node-interface/dist/');

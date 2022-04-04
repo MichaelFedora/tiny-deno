@@ -52,6 +52,10 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
             absPath += '/private';
           break;
 
+        case 'collections':
+          absPath += '/collections';
+          break;
+
         default: // it's an app
           absPath += `/appdata/${context}`;
       }
@@ -71,7 +75,7 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
     session?: Session): false | { perm: 'read' | 'write', path: string } {
 
     if(!params.path)
-      return false;
+      params.path = '/';
 
     const context = params.context === '~' ? session?.context : params.context;
     const identifier = params.identifier === '~' ? session?.identifier : params.identifier;
@@ -214,10 +218,8 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
      */
     router.use('/:root(public|private|root|collections)/:path(.*)',
       handleError('file-store'),
-      new Router<Req>()
-        .use('', (rreq, next) => {
-          const req = rreq as unknown as TinyRouteRequest;
-
+      new Router<TinyRouteRequest>()
+        .use('', (req, next) => {
           const validated = this.validatePath(req.params, req.context.user.id!, req.session);
           if(!validated)
             throw new ForbiddenError('Requested path is inaccessible.');
@@ -242,7 +244,7 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
           if(req.context.perm !== 'write')
             throw new ForbiddenError('Read access only.');
 
-          await this.write(req.context.path as string, req.stream || await req.text(), req.headers.get('Content-Type') || 'application/octet-stream');
+          await this.write(req.context.path as string, req.stream ?? await req.blob(), req.headers.get('Content-Type') || 'application/octet-stream');
 
           return noContent();
         })
@@ -256,12 +258,33 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
         }));
 
     router.get('/list-files/:root(public|private|root|collections)?/:path(.*)?', async req => {
-      const rreq = req as unknown as TinyRouteRequest;
-      const validation = this.validatePath(rreq.params, rreq.context.user.id!, req.session);
+      const validation = this.validatePath({
+        context: req.context.context,
+        identifier: req.context.identifier,
+        root: req.params.root! as 'public' | 'private' | 'root' | 'collections',
+        path: req.params.path
+      }, req.context.user.id!, req.session);
+
       if(!validation || validation.perm !== 'write')
         throw new ForbiddenError('Cannot index requested path.');
 
-      return json(await this.list(validation.path, Number(req.query.page) || 0, Boolean(req.query.advance)));
+      const advance = Boolean(req.query.advance);
+      const page = (req.query.page && Number.parseInt(req.query.page)) || 0;
+
+      const list = await this.list(validation.path, page, advance);
+      const prefixLen = ('/' + req.context.user.id!).length;
+
+      if(advance) {
+        const entries: FileListAdvance['entries'] = { };
+        for(const [path, info] of Object.entries((list as FileListAdvance).entries))
+          entries[path.slice(prefixLen)] = info;
+
+        (list as FileListAdvance).entries = entries;
+
+      } else
+        (list as FileList).entries = (list as FileList).entries.map(e => e.slice(prefixLen))
+
+      return json(list);
     });
 
     router.get('/storage-stats', async req => json(!req.user ? null : await this.fs.getStorageStats(req.user)))
@@ -282,7 +305,13 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
         if(path.startsWith('/' + root))
           path = path.slice(0, root.length + 1);
 
-        return this.validatePath({ ...req.params, root, path }, req.context.user.id!, req.session);
+        return this.validatePath({
+          context: req.context.context,
+          identifier: req.context.identifier,
+          root,
+          path
+        }, req.context.user.id!, req.session);
+
       }).filter(Boolean) as { perm: 'read' | 'write'; path: string; }[];
 
       if(!validated.length)

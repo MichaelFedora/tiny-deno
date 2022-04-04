@@ -2,7 +2,16 @@ import { User, Session } from '../common/types.ts';
 import { TinyRequest } from '../common/types.ts';
 
 export interface AuthSession extends Session {
+  readonly secret: JsonWebKey;
   readonly created: number;
+}
+
+export interface AuthJWT {
+  jti: string;
+  iss: string;
+  sub: string;
+  iat: number;
+  exp?: number;
 }
 
 export interface Handshake {
@@ -13,7 +22,10 @@ export interface Handshake {
 
   readonly app: string;
   readonly redirect: string;
-  readonly scopes: string[];
+
+  readonly permissions: string[];
+  readonly collections: string[];
+
   readonly created: number;
 }
 
@@ -22,6 +34,7 @@ export interface MasterKey {
 
   readonly user: string;
   readonly name: string;
+  readonly secret: JsonWebKey;
   readonly created: number;
 }
 

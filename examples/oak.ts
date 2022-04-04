@@ -1,4 +1,4 @@
-import { Application, Router as OakRouter, send } from 'https://deno.land/x/oak@v10.2.0/mod.ts';
+import { Application, Router as OakRouter, send } from '../deps-testing/oak.ts';
 
 import { appendRouterToOak } from '../api/helpers/oak.ts';
 import { MalformedError } from '../common/errors.ts';
@@ -93,7 +93,7 @@ app.addEventListener('listen', ({ hostname, port, secure }) => {
 
   const protocol = secure ? 'https' : 'http';
 
-  console.log(`Serving Tiny-Auth on ${protocol}://${hostname ?? 'localhost'}:${port} !`);
+  console.log(`Serving Tiny-STD on ${protocol}://${hostname ?? 'localhost'}:${port} !`);
 });
 
 app.listen({ port: 3000 });

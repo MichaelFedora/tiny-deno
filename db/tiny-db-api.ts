@@ -103,32 +103,32 @@ export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest
     storeRouter.use(handleError('key-value-store'));
 
     storeRouter.get('/:key', async req => {
-      return json(await this.keyValueGet(req.user!.id, req.params.context, req.params.identifier, req.params.key!));
+      return json(await this.keyValueGet(req.user!.id, req.context.context, req.context.identifier, req.params.key!));
     });
 
     storeRouter.post('', async req => {
-      const id = await this.keyValueAdd(req.user!.id, req.params.context, req.params.identifier, await req.json());
+      const id = await this.keyValueAdd(req.user!.id, req.context.context, req.context.identifier, await req.json());
       return text(id);
     });
 
     storeRouter.put('/:key', async req => {
-      await this.keyValuePut(req.user!.id, req.params.context, req.params.identifier, req.params.key!, await req.json());
+      await this.keyValuePut(req.user!.id, req.context.context, req.context.identifier, req.params.key!, await req.json());
       return noContent();
     });
 
     storeRouter.delete('/:key', async req => {
-      await this.keyValueDel(req.user!.id, req.params.context, req.params.identifier, req.params.key!);
+      await this.keyValueDel(req.user!.id, req.context.context, req.context.identifier, req.params.key!);
       return noContent();
     });
 
     keyValueRouter.use('/store', storeRouter);
 
     keyValueRouter.post('/search', async req => {
-      return json(await this.keyValueSearch(req.user!.id, req.params.context, req.params.identifier, await req.json()));
+      return json(await this.keyValueSearch(req.user!.id, req.context.context, req.context.identifier, await req.json()));
     });
 
     keyValueRouter.post('/batch', async req => {
-      await this.keyValueBatch(req.user!.id, req.params.context, req.params.identifier, await req.json());
+      await this.keyValueBatch(req.user!.id, req.context.context, req.context.identifier, await req.json());
       return noContent();
     });
 
@@ -145,21 +145,21 @@ export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest
     tablesRouter.use(handleError('dynamic-tables'));
 
     tablesRouter.get('/:name?', async req =>
-      json(await this.dynGetTable(req.user!.id, req.params.context, req.params.identifier, req.params.name)));
+      json(await this.dynGetTable(req.user!.id, req.context.context, req.context.identifier, req.params.name)));
 
     tablesRouter.post('/', async req =>
-      json(await this.dynRegisterTables(req.user!.id, req.params.context, req.params.identifier, await req.text())));
+      json(await this.dynRegisterTables(req.user!.id, req.context.context, req.context.identifier, await req.text())));
 
     tablesRouter.put('/:name', async req =>
-      json(await this.dynReplaceTable(req.user!.id, req.params.context, req.params.identifier, req.params.name!, await req.text())));
+      json(await this.dynReplaceTable(req.user!.id, req.context.context, req.context.identifier, req.params.name!, await req.text())));
 
     tablesRouter.delete('/:name', async req => {
-      await this.dynDropTable(req.user!.id, req.params.context, req.params.identifier, req.params.name!);
+      await this.dynDropTable(req.user!.id, req.context.context, req.context.identifier, req.params.name!);
       return noContent();
     });
 
     tablesRouter.delete('', async req => {
-      await this.dynDropAll(req.user!.id, req.params.context, req.params.identifier);
+      await this.dynDropAll(req.user!.id, req.context.context, req.context.identifier);
       return noContent();
     });
 
@@ -178,7 +178,7 @@ export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest
           return new Response('No GraphiQL renderer!', { status: 500 });
       }
 
-      const result = await this.db.query(req.user!.id, this.parseScope(req.params.context, req.params.identifier), (data.query || data.mutation)!);
+      const result = await this.db.query(req.user!.id, this.parseScope(req.context.context, req.context.identifier), (data.query || data.mutation)!);
 
       return new Response(JSON.stringify(result, null, 2), { status: 200, headers: { 'Content-Type': data.contentType } });
     });

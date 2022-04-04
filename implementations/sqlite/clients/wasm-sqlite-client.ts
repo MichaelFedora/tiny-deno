@@ -51,7 +51,7 @@ export class WasmSQLiteClient<T = any> extends SQLiteClient<T> {
    */// deno-lint-ignore no-explicit-any
    async exec(query: string, ...params: any[]): Promise<void> {
     if(this.debug)
-      console.debug(`[sqlite][${this.executor}][exec]:`, query, params.length ? params : '');
+      console.debug(`[${new Date().toISOString()}][sqlite][${this.executor}][exec]:`, query, params.length ? params : '');
 
     const stmt = this.db.prepareQuery(query);
     try {
@@ -73,19 +73,17 @@ export class WasmSQLiteClient<T = any> extends SQLiteClient<T> {
   async one<U = T>(query: string, ...params: any[]): Promise<U | null> {
 
     if(this.debug)
-      console.debug(`[sqlite][${this.executor}][one]:`, query, params.length ? params : '');
-
-    await Promise.resolve();
+      console.debug(`[${new Date().toISOString()}][sqlite][${this.executor}][one]:`, query, params.length ? params : '');
 
     const stmt = this.db.prepareQuery(query);
     try {
       const iter = stmt.iterEntries(params);
-      const res = iter.next();
+      const res = await Promise.resolve(iter.next());
 
       if(res.done && !res.value)
         return null;
 
-      const next = iter.next();
+      const next = await Promise.resolve(iter.next());
       if(!next.done || next.value)
         throw new Error('Multiple records with key found!');
 
@@ -106,7 +104,7 @@ export class WasmSQLiteClient<T = any> extends SQLiteClient<T> {
   async all<U = T>(query: string, ...params: any[]): Promise<U[]> {
 
     if(this.debug)
-      console.debug(`[sqlite][${this.executor}][all]:`, query, params.length ? params : '');
+      console.debug(`[${new Date().toISOString()}][sqlite][${this.executor}][all]:`, query, params.length ? params : '');
 
     const stmt = this.db.prepareQuery(query);
     try {

@@ -1,27 +1,40 @@
+import jose from '../deps/jose.ts';
+
 import { RouteHandler, text } from '../api/mod.ts';
 import { AuthError } from '../common/errors.ts';
 
-import type { AuthRequest } from './auth-types.ts';
+import type { AuthRequest, AuthJWT } from './auth-types.ts';
 import type AuthDb from './auth-db.ts';
+
+import { importSecret } from './auth-util.ts';
 
 export function validateUserSession(db: AuthDb, optional = false): RouteHandler<AuthRequest> {
   return async (req: AuthRequest, next) => {
     try  {
 
-      const params = req.url.indexOf('?') >= 0
+      const query = req.url.indexOf('?') >= 0
         ? new URLSearchParams(req.url.slice(req.url.indexOf('?')))
         : null;
 
       const auth = req.headers.get('Authorization') || '';
 
-      const sid = params?.get('sid') || (
-        /^(?:bearer|session)\s+.+$/.test(auth)
-          ? auth.replace(/^(?:bearer|session)\s+/, '').trim()
+      const token = query?.get('sid') || (
+        /^(?:bearer|session)\s+.+$/i.test(auth)
+          ? auth.replace(/^(?:bearer|session)\s+/i, '').trim()
           : '');
 
-      const session = sid ? await db.getSession(sid) : null;
+      const jwt = token ? jose.decodeJwt(token) as AuthJWT : null;
+      const session = jwt ? await db.getSession(jwt.jti) : null;
+
       if(!session)
         throw new AuthError('No session found!');
+
+      try {
+        await jose.jwtVerify(token, await importSecret(session.secret));
+      } catch(e) {
+        console.error('auth token validation error:', e);
+        throw new AuthError('Token does not validate!');
+      }
 
       const user = await db.getUser(session.user);
       if(!user)

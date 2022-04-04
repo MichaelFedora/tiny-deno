@@ -3,7 +3,7 @@ import jose from '../deps/jose.ts';
 import { Router, json, preconditionFailed, conflict } from '../api/mod.ts';
 
 import { ForbiddenError, MalformedError, NotFoundError } from '../common/errors.ts';
-import type { TinyRequest, User } from '../common/types.ts';
+import type { TinyContextualRequest, User, Session } from '../common/types.ts';
 import { handleError } from '../common/middleware.ts';
 import { publicKeyToAddress } from '../common/crypto-util.ts';
 import type KeyValueStore from '../common/key-value-store.ts';
@@ -19,7 +19,7 @@ import FileApi from '../file/file-api.ts';
  *
  * @see https://github.com/stacks-network/gaia
  */
-export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req> {
+export class GaiaApi<Req extends TinyContextualRequest = TinyContextualRequest> extends FileApi<Req> {
 
   readonly #gaiaChallengeText: string;
   readonly #locks = new Set<string>();
@@ -116,7 +116,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
     protected readonly getUserFromAddress: (address: string) => Promise<User | null>,
     gaiaChallengeText?: string) {
 
-    super(db, fs, (_, next) => next());
+    super(db, fs);
 
     this.#gaiaChallengeText = gaiaChallengeText ?? 'tiny_challenge_text';
   }
@@ -129,6 +129,19 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
 
   async setOldestValidTimestamp(address: string, value: number): Promise<void> {
     await this.kv.put('gaia:oldestValidTimestamp:' + address, value);
+  }
+
+  async validateGaiaPath(address: string, path = '', session?: Session) {
+    const urlPath = this.cleanPath('gaia/' + address! + '/' + path);
+    const source = await this.getUserFromAddress(address!);
+    if(!source)
+      throw new NotFoundError();
+
+    const v = this.validatePath({ context: 'user', identifier: source.username, root: 'public', path: urlPath }, source.id!, session);
+    if(!v)
+      throw new NotFoundError();
+
+    return v;
   }
 
   // #endregion store
@@ -150,7 +163,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
     // public
 
     router.head('/read/:address/:path(.+)', async req => {
-      const info = await this.getInfo(req.query.username!, req.params.address! + '/' + req.params.path);
+      const info = await this.getInfo(req.params.address! + '/' + req.params.path);
       if(!info)
         throw new NotFoundError();
 
@@ -166,11 +179,13 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
     });
 
     router.get('/read/:address/:path(.+)', async req => {
-      const info = await this.getInfo(req.query.username!, req.params.address! + '/' + req.params.path);
+      const { path } = await this.validateGaiaPath(req.params.address!, req.params.path, req.session);
+
+      const info = await this.getInfo(path);
       if(!info)
         throw new NotFoundError();
 
-      const res = await this.read(req, req.query.username!, req.params.address! + '/' + req.params.path);
+      const res = await this.read(req, req.query.username!, );
       res.headers.append('ETag', String(info.modified));
 
       return res;
@@ -184,7 +199,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
 
     // permission protected
 
-    router.use('', async (req, next) => {
+    router.use(async (req, next) => {
       const auth = req.headers.get('Authorization');
       if(!auth)
         throw new ForbiddenError('No authorization given!');
@@ -197,7 +212,13 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
 
       req.user = user;
       req.context.username = user.username;
-      req.context.path = this.parsePath(user.username, req.params.address! + '/' + req.params.path!);
+      const { path, perm } = await this.validateGaiaPath(req.params.address!, req.params.path, req.session);
+
+      if(perm !== 'write')
+        throw new ForbiddenError();
+
+      req.context.path = path;
+      req.context.perm = perm;
 
       return next();
     });
@@ -225,7 +246,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
         return preconditionFailed('Only supports \'*\' for If-None-Match');
 
       if(ifMatch !== '*') {
-        const info = await this.getInfo(req.context.username as string, req.context.path as string);
+        const info = await this.getInfo(req.context.path as string);
 
         if(info && ifNoneMatch === '*')
           return preconditionFailed('Cannot create: File already exists.');
@@ -244,8 +265,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
       try {
         this.#locks.add(req.context.path as string);
 
-        info = await this.write(req.context.username as string,
-          req.context.path as string,
+        info = await this.write(req.context.path as string,
           req.stream || await req.text(),
           req.headers.get('Content-Type') || 'application/octet-stream');
 
@@ -270,7 +290,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
 
       const ifMatch = req.headers.get('If-Match');
       if(ifMatch) {
-        const info = await this.getInfo(req.context.username as string, req.context.path as string);
+        const info = await this.getInfo(req.context.path as string);
 
         if(!info && ifMatch !== '*')
           return preconditionFailed('Cannot delete: File does not exist.');
@@ -286,7 +306,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
       try {
         this.#locks.add(req.context.path as string);
 
-        await this.delete(req.context.username as string, req.context.path as string);
+        await this.delete(req.context.path as string);
 
       } catch(e) {
         throw e;
@@ -331,7 +351,7 @@ export class GaiaApi<Req extends TinyRequest = TinyRequest> extends FileApi<Req>
         // do nothing
       }
 
-      const list = await this.list(req.context.username as string, req.params.address!, page, advance);
+      const list = await this.list(req.context.path as string, page, advance);
 
       const stat: {
         entries: string[] | { name: string; lastModifiedDate: number; contentLength: number; etag: string }[];

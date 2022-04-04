@@ -38,7 +38,7 @@ export async function publicKeyToAddress(publicKey: string): Promise<string> {
 Deno.test(async function TestPublicKeyToAddress() {
   console.log('\n');
 
-  const libauth = await import('https://unpkg.com/@bitauth/libauth/build/module/index.js');
+  const { validateSecp256k1PrivateKey, instantiateSecp256k1 } = await import('../deps-testing/libauth.ts');
 
   const tests = [
     {
@@ -63,10 +63,10 @@ Deno.test(async function TestPublicKeyToAddress() {
 
     const priv = hexToBytes(test.privKey.slice(0, 64));
 
-    if(!libauth.validateSecp256k1PrivateKey(priv))
+    if(!validateSecp256k1PrivateKey(priv))
       throw new Error('Bad private key!');
 
-    const secp256k1 = await libauth.instantiateSecp256k1(crypto.getRandomValues(new Uint8Array(32)));
+    const secp256k1 = await instantiateSecp256k1(crypto.getRandomValues(new Uint8Array(32)));
 
     const pub = secp256k1.derivePublicKeyCompressed(priv);
     const pubKey = bytesToHex(pub);

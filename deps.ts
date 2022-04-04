@@ -1,6 +1,8 @@
 /* STD */
 
-export { assert, assertEquals, assertRejects } from 'https://deno.land/std@0.123.0/testing/asserts.ts';
+export { assert, assertEquals, assertRejects } from 'https://deno.land/std@0.133.0/testing/asserts.ts';
+export { serveFile } from 'https://deno.land/std@0.133.0/http/file_server.ts';
+export { join as joinPath } from 'https://deno.land/std@0.133.0/path/mod.ts';
 
 /* Third Party */
 
@@ -35,7 +37,7 @@ export type { StatefulEvt, StatefulReadonlyEvt, NonPostableEvt } from 'https://d
 
 // sqlite
 
-export { DB, type PreparedQuery } from 'https://deno.land/x/sqlite@v3.2.0/mod.ts';
+export { DB, type PreparedQuery } from 'https://deno.land/x/sqlite@v3.3.0/mod.ts';
 
 // pg
 
@@ -43,13 +45,13 @@ export type { Client, PoolClient } from 'https://deno.land/x/postgres@v0.15.0/mo
 
 // jose
 
-export * as jose from 'https://deno.land/x/jose@v4.5.0/index.ts';
+export * as jose from 'https://deno.land/x/jose@v4.6.0/index.ts';
 
 // libauth
 
 // export * as libauth from 'https://deno.land/x/libauth@v1.19.1/src/index.ts';
-import { instantiateSha256 } from 'https://unpkg.com/@bitauth/libauth/build/module/lib/crypto/sha256.js';
-import { instantiateRipemd160 } from 'https://unpkg.com/@bitauth/libauth/build/module/lib/crypto/ripemd160.js';
-import { encodeBase58Address } from 'https://unpkg.com/@bitauth/libauth/build/module/lib/address/base58-address.js';
+import { instantiateSha256 } from 'https://unpkg.com/@bitauth/libauth@1.19.1/build/module/lib/crypto/sha256.js';
+import { instantiateRipemd160 } from 'https://unpkg.com/@bitauth/libauth@1.19.1/build/module/lib/crypto/ripemd160.js';
+import { encodeBase58Address } from 'https://unpkg.com/@bitauth/libauth@1.19.1/build/module/lib/address/base58-address.js';
 
 export { instantiateSha256, instantiateRipemd160, encodeBase58Address };

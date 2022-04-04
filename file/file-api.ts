@@ -18,7 +18,7 @@ interface TinyRouteRequest extends TinyContextualRequest {
 /**
  * The Api for the File Module of the Tiny suite
  * Should be mounted to a `/:context/:identifier`
- * with those route params. It should also have an optional-autentication
+ * with those route params. It should also have an optional-authentication
  * middleware filling out the User and Session fields.
  */
 export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> extends Api<Req> {
@@ -212,7 +212,7 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
     /**
      * For the following route: `/:root(public|private|root|collections)/:path(.*)'
      *
-     * Giving the following paramters:
+     * Giving the following parameters:
      * - `root`: `'public' | 'private' | 'root' | 'collections'`
      * - `path`: `string | undefined`
      */

@@ -298,7 +298,6 @@ Not yet implemented.
 
 ### Friends
 
-
 Not yet implemented.
 
 Draft:

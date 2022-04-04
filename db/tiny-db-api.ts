@@ -10,7 +10,7 @@ import type Db from './tiny-db.ts';
 /**
  * The Api for the DB Module of the Tiny suite
  * Should be mounted to a `/:context/:identifier`
- * with those route params. It should also have an optional-autentication
+ * with those route params. It should also have an optional-authentication
  * middleware filling out the User and Session fields.
  */
 export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest> extends Api<Req> {

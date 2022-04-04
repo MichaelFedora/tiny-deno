@@ -5,6 +5,7 @@ import type { Query, QueryExpression } from '../common/types.ts';
 import {  MalformedError } from '../common/errors.ts';
 
 
+// deno-lint-ignore no-explicit-any
 export function compileExpr<T = any>(field: string, expr: QueryExpression<T>, vars: any[]): string {
   if(!/^\$?\w+$/.test(field))
     throw new MalformedError('Field ("' + field + '") is not a valid field! Must be [a-zA-Z0-9_]+ only!');
@@ -55,7 +56,9 @@ export function compileExpr<T = any>(field: string, expr: QueryExpression<T>, va
   }
 }
 
+// deno-lint-ignore no-explicit-any
 export function compileQuery<T = any>(query: Query<T>): { query: string; params: any[] } {
+  // deno-lint-ignore no-explicit-any
   const vars: any[] = [];
   const statements: string[] = [];
 

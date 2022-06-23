@@ -184,10 +184,11 @@ export function resolveQuery<T = any>(query: Query<T>, value: T): boolean {
       // nominal fields
 
       default:
-        if(typeof query[key] === 'object')
-          return resolveExpr(query[key], value[key as keyof T]);
-        else
-          return isEqual(query[key], value[key as keyof T]);
+        if(typeof query[key] === 'object') {
+          if(!resolveExpr(query[key], value[key as keyof T]))
+            return false;
+        } else if(!isEqual(query[key], value[key as keyof T]))
+          return false;
     }
   }
 

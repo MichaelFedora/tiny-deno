@@ -6,7 +6,7 @@ import { text } from '../api/mod.ts';
 import { handleError } from '../common/middleware.ts';
 import { MalformedError } from '../common/errors.ts';
 
-import { basePath, root, router } from './common.ts';
+import { realBasePath, realPagePath, router } from './common.ts';
 
 // serve the frontend
 router.get('/:path(.*)', async (req, next) => {
@@ -15,10 +15,10 @@ router.get('/:path(.*)', async (req, next) => {
 
   try {
 
-    let path = basePath + '/' + req.params.path;
+    let path = realBasePath + '/' + req.params.path;
     path = await Deno.realPath(path);
 
-    if(!path.includes(basePath))
+    if(!path.includes(realBasePath))
       return next();
 
     return await serveFile(req, path);
@@ -35,7 +35,7 @@ router.get('/:path(.*)', async (req, next) => {
 });
 
 // serve the root index.html file
-router.use((req, next) => req.method !== 'GET' ? next() : serveFile(req, root));
+router.use((req, next) => req.method !== 'GET' ? next() : serveFile(req, realPagePath));
 
 const rootHandleError = handleError('root');
 

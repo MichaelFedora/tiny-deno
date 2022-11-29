@@ -1,6 +1,6 @@
 // std
 
-export { Server } from 'https://deno.land/std@0.133.0/http/server.ts';
+export { Server } from 'https://deno.land/std@0.166.0/http/server.ts';
 
 // libauth
 
@@ -11,8 +11,8 @@ export { instantiateSecp256k1, validateSecp256k1PrivateKey };
 
 // oak
 
-export { Application, Router, send } from 'https://deno.land/x/oak@v10.5.1/mod.ts';
+export { Application, Router, send } from 'https://deno.land/x/oak@v11.1.0/mod.ts';
 
 // graphiql
 
-export { renderPlaygroundPage } from 'https://deno.land/x/gql@1.1.1/graphiql/render.ts';
+export { renderPlaygroundPage } from 'https://deno.land/x/gql@1.1.2/graphiql/render.ts';

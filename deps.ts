@@ -1,8 +1,8 @@
 /* STD */
 
-export { assert, assertEquals, assertRejects } from 'https://deno.land/std@0.133.0/testing/asserts.ts';
-export { serveFile } from 'https://deno.land/std@0.133.0/http/file_server.ts';
-export { join as joinPath } from 'https://deno.land/std@0.133.0/path/mod.ts';
+export { assert, assertEquals, assertRejects } from 'https://deno.land/std@0.166.0/testing/asserts.ts';
+export { serveFile } from 'https://deno.land/std@0.166.0/http/file_server.ts';
+export { join as joinPath } from 'https://deno.land/std@0.166.0/path/mod.ts';
 
 /* Third Party */
 
@@ -32,20 +32,20 @@ export {
 
 // evt
 
-export { Evt } from 'https://deno.land/x/evt@v1.10.2/mod.ts';
-export type { StatefulEvt, StatefulReadonlyEvt, NonPostableEvt } from 'https://deno.land/x/evt@v1.10.2/mod.ts';
+export { Evt } from 'https://deno.land/x/evt@v2.4.13/mod.ts';
+export type { StatefulEvt, StatefulReadonlyEvt, NonPostableEvt } from 'https://deno.land/x/evt@v2.4.13/mod.ts';
 
 // sqlite
 
-export { DB, type PreparedQuery } from 'https://deno.land/x/sqlite@v3.3.0/mod.ts';
+export { DB, type PreparedQuery } from 'https://deno.land/x/sqlite@v3.7.0/mod.ts';
 
 // pg
 
-export type { Client, PoolClient } from 'https://deno.land/x/postgres@v0.15.0/mod.ts';
+export type { Client, PoolClient } from 'https://deno.land/x/postgres@v0.17.0/mod.ts';
 
 // jose
 
-export * as jose from 'https://deno.land/x/jose@v4.6.0/index.ts';
+export * as jose from 'https://deno.land/x/jose@v4.11.1/index.ts';
 
 // libauth
 

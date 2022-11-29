@@ -1,4 +1,4 @@
-import { type DynTable, TableSchema, ColumnType } from './dyn-table.ts';
+import { type DynTable, type TableSchema, ColumnType } from './dyn-table.ts';
 export { type TableSchema, ColumnType };
 
 export abstract class DynTableStore {

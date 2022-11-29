@@ -209,7 +209,7 @@ Deno.test({
   async fn(): Promise<void> {
     const db = new DB(':memory:');
 
-    const dyn = new SQLiteDynTable<{ id: string; key: string; value?: string }>(db, {
+    const dyn = new SQLiteDynTable<{ id: string; key: string; value?: string | null }>(db, {
       name: 'DynTable',
       columns: {
         id: { type: ColumnType.ID, nullable: false, meta: 'ID!' },

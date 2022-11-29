@@ -134,7 +134,7 @@ Deno.test({
 
     const date = new Date();
     assertEquals(await client.one(`INSERT INTO test (key, value) VALUES ($1, $2) RETURNING *`, 'foo', date), { key: 'foo', value: date });
-    await assertRejects(() => client.one('SELECT * FROM test'), undefined, 'Multiple records with key found!');
+    await assertRejects(() => client.one('SELECT * FROM test'), Error, 'Multiple records with key found!');
 
     assertEquals(await client.all('SELECT * FROM test'), [{ key: 'hello', value: 'world' }, { key: 'foo', value: date }]);
 

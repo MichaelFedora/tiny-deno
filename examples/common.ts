@@ -149,8 +149,10 @@ router.use((req, next) => {
 });
 
 /** The base path for the frontend files */
-const basePath = await Deno.realPath(Deno.cwd() + '/implementations/node-interface/dist/');
-/** The path to the root index.html file */
-const root = await Deno.realPath(basePath + '/index.html');
+const basePath = './implementations/node-interface/dist/';
+const realBasePath = await Deno.realPath(Deno.cwd() + basePath);
+/** The path to the index.html file */
+const pagePath = basePath + 'index.html';
+const realPagePath = await Deno.realPath(realBasePath + '/index.html');
 
-export { basePath, root, router };
+export { realBasePath, basePath, pagePath, realPagePath, router };

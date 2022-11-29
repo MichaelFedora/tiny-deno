@@ -3,7 +3,7 @@ import { Application, Router as OakRouter, send } from '../deps-testing/oak.ts';
 import { appendRouterToOak } from '../api/helpers/oak.ts';
 import { MalformedError } from '../common/errors.ts';
 
-import { basePath, root, router } from './common.ts';
+import { pagePath, realBasePath, router } from './common.ts';
 
 const app = new Application();
 
@@ -54,7 +54,7 @@ app.use(async (ctx, next) => {
 
 const oakRouter = new OakRouter();
 
-// append the tiny router to oak
+// append the tiny router to oak (doesn't work)
 appendRouterToOak(router, oakRouter);
 
 oakRouter.get('/:path(.*)', async (ctx, next) => {
@@ -63,13 +63,13 @@ oakRouter.get('/:path(.*)', async (ctx, next) => {
 
   try {
 
-    let path = basePath + '/' + ctx.params.path;
+    let path: string = realBasePath + '/' + ctx.params.path;
     path = await Deno.realPath(path);
 
-    if(!path.includes(basePath))
+    if(!path.includes(realBasePath))
       return next();
 
-    return await send(ctx, path);
+    return await send(ctx, path, { root: '/' });
 
   } catch(e) {
 
@@ -82,7 +82,7 @@ oakRouter.get('/:path(.*)', async (ctx, next) => {
   }
 });
 
-oakRouter.use((ctx, next) => ctx.request.method !== 'GET' ? next() : send(ctx, root));
+oakRouter.use((ctx, next) => ctx.request.method !== 'GET' ? next() : send(ctx, pagePath));
 
 app.use(oakRouter.allowedMethods(), oakRouter.routes());
 

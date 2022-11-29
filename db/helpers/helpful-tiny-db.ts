@@ -177,7 +177,7 @@ export class HelpfulTinyDb extends TinyDb {
     await this.dynTableStore.dropMany(names.map(n => this.#table(user, scope, n)));
   }
 
-  public async query<T = Record<string, any>>(user: string, scope: string, query: string): Promise<GQLResult<T>> {
+  public async query<T extends Record<string, any> = Record<string, any>>(user: string, scope: string, query: string): Promise<GQLResult<T>> {
     const tablePromises: Promise<GQLTable | null>[] = [];
 
     const schemas = await this.getSchemas(user, scope);

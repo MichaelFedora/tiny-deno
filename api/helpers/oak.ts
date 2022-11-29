@@ -1,5 +1,5 @@
 import Router from '../router.ts';
-import type { RouteHandler, SlimRequestStub } from '../types.ts';
+import type { RequestStub, RouteHandler, SlimRequestStub } from '../types.ts';
 import { parseQuery } from '../util.ts';/** Stub declaration of an Oak Router Context */
 
 interface OakContextStub {
@@ -9,8 +9,11 @@ interface OakContextStub {
 
   request: {
     url: URL;
+    headers: Headers;
+    method: string;
 
     body(options: { type: 'stream' }): { value: ReadableStream<Uint8Array> };
+    body(): { value: unknown };
 
     originalRequest: SlimRequestStub;
   }
@@ -66,8 +69,20 @@ export function mapHandlerToOak(handler: RouteHandler): OakMiddlewareStub {
 
     // Map the request to be compatible
 
-    const req = Object.assign(ctx.request.originalRequest, {
-      stream: ctx.request.body({ type: 'stream' })?.value,
+    let stream: ReadableStream<Uint8Array> | undefined;
+
+    try {
+      stream = ctx.request.body({ type: 'stream' })?.value;
+    } catch {
+      stream = undefined;
+    }
+
+    const req = Object.assign(new Request(ctx.request.url.toString(), {
+      body: stream,
+      headers: ctx.request.headers,
+      method: ctx.request.method,
+    }), {
+      stream,
       query: parseQuery(ctx.request.url.href),
       params: ctx.params,
       context: ctx.state

@@ -358,7 +358,7 @@ export class AuthApi extends Api {
     });
 
     router.use('/sessions', requireUserSession, (req, next) => {
-      if(req.session!.context !== 'user')
+      if(req.session?.context !== 'user')
         throw new ForbiddenError('Must be a user!');
 
       return next();

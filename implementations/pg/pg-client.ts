@@ -14,10 +14,10 @@ export class PgClient<T = any> {
     options = Object.assign({
       debug: this.debug,
       autoRelease: this.autoRelease,
-      mapReturn: this.mapReturn
     }, options);
 
     this.debug = Boolean(options.debug);
+    this.autoRelease = Boolean(options.autoRelease);
   }
 
 
@@ -67,8 +67,8 @@ export class PgClient<T = any> {
       throw e;
 
     } finally {
-      if(this.autoRelease && client instanceof PoolClient)
-        client.release();
+      if(this.autoRelease && typeof (client as PoolClient).release === 'function')
+        (client as PoolClient).release();
     }
   }
 

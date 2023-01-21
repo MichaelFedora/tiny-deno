@@ -1,6 +1,6 @@
 // std
 
-export { Server } from 'https://deno.land/std@0.166.0/http/server.ts';
+export { Server } from 'https://deno.land/std@0.173.0/http/server.ts';
 
 // libauth
 

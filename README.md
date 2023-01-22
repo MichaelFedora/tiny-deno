@@ -1,5 +1,13 @@
 # Tiny Deno
 
+To run:
+
+`deno run --allow-read=. --allow-net ./examples/std.ts` and press Y when prompted for the temp dir requests.
+
+To run with persistent data saved in the `./dist` directory:
+
+`deno run --allow-read=. --allow-write=./dist --allow-net ./examples/std.ts --persist`
+
 ## A federated web-app backend
 
 This is a giant repository of all the `tiny` suite v2+ backend software.

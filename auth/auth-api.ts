@@ -165,6 +165,9 @@ export class AuthApi extends Api {
     permissions: readonly string[];
     collections: readonly string[];
   }>, username?: string): Promise<string> {
+    if(app === 'secure')
+      throw new ForbiddenError('App cannot be called "secure".');
+
     const hsId = await this.db.addHandshake({
       app,
       redirect,
@@ -182,6 +185,8 @@ export class AuthApi extends Api {
     permissions: readonly string[];
     collections: readonly string[];
   }>): Promise<string> {
+    if(app === 'secure')
+      throw new ForbiddenError('App cannot be called "secure".');
 
     const handshake = await this.db.getHandshakeFromCode(code);
     if(!handshake)
@@ -397,14 +402,14 @@ export class AuthApi extends Api {
         if(!req.query?.redirect || !req.query.app)
           throw new MalformedError('Must have ?redirect={url}&app={app}<&permissions=[]><&collections=[]> query.');
 
-        const permissions = JSON.parse(req.query.permissions ?? '[]');
-        const collections = JSON.parse(req.query.collections ?? '[]');
+        const permissions = req.query.permissions?.replaceAll(/[\[\]]/g, '').split(',') ?? [];
+        const collections = req.query.collections?.replaceAll(/[\[\]]/g, '').split(',') ?? [];
 
-        return redirect(await this.startHandshake(req.query.redirect, req.query.app, { permissions, collections }));
+        return redirect(await this.startHandshake(req.query.redirect, req.query.app, { permissions, collections }, req.query.username));
       });
 
       handshakeRouter.post('/complete', async req => {
-        const body: {
+        let body: {
           code: string;
 
           app: string;
@@ -412,7 +417,13 @@ export class AuthApi extends Api {
 
           permissions?: string[];
           collections?: string[];
-        } = await req.json();
+        } | null = null;
+
+        try {
+          body = await req.json();
+        } catch {
+          // do nothing
+        }
 
         if(!body || typeof body !== 'object' || !body.redirect || !body.app || !body.code)
           throw new MalformedError('Body should contain: { redirect, app, code, collections?, permissions? }!');

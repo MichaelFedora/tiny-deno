@@ -20,6 +20,7 @@ export interface Handshake {
   code?: string;
   user?: string;
 
+  /** Cannot be "secure". */
   readonly app: string;
   readonly redirect: string;
 

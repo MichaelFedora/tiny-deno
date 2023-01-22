@@ -48,8 +48,10 @@ Core:
 
 Handshakes:
 
-- GET `/handshake/start` - Start a handshake by redirecting to this route
-- POST `/handshake/complete` - Finish a handshake by posting data to this route and getting a session back
+- GET `/handshake/start` - Start a handshake by redirecting to this route with the `?app={appId}&redirect={redirectUrl}` params
+  - Optionally, `collections` and `permissions` parameters can be added as well.
+- POST `/handshake/complete` - Finish a handshake by posting `{ app, redirect, code, collections?, permissions? }` to this route
+  and getting a session back (if they matched the initial handshake parameters + the returned code correctly)
 - GET `/handshake/:id` - As a user, get handshake information
 - POST `/handshake/:id/(approve|cancel)` - As a user, approve or cancel the handshake and be given back a url
 to redirect to.

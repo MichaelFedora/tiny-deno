@@ -96,6 +96,7 @@ export class FileApi<Req extends TinyContextualRequest = TinyContextualRequest> 
     if(!foreign && session.context === 'user')
       return { perm: 'write', path: absPath };
 
+    /** @todo multiplayer storage - add checks to see if we're allowed private read or write access */
     // if it's a foreign user, just check to see if it's a public path
     if(foreign)
       return absPath.startsWith(publicPath) ? { perm: 'read', path: absPath } : false;

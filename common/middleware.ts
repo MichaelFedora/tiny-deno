@@ -48,7 +48,7 @@ export function makeContextIdentifierValidator<R extends TinyRequest>(getContext
       throw new MalformedError('This is a Context-Identifier route and a context or identifier is missing or invalid!');
 
     if((req.params.context === '~' || req.params.identifier === '~') && !req.session)
-      throw new MalformedError('Cannot have `~` context/identifier if no session was passed!');
+      throw new MalformedError('Cannot have a `~` context/identifier if no session was passed!');
 
     req.context.context = req.params.context === '~' ? req.session!.context : req.params.context;
     req.context.identifier = req.params.identifier === '~' ? req.session!.identifier : req.params.identifier;

@@ -90,14 +90,15 @@ export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest
 
   // #endregion graphql
 
+  /** @todo add security verification yikes */
   compile(router = new Router<Req>()): Router<Req> {
 
     router.use(handleError('Db'));
 
-    // #region key value
-
     const keyValueRouter = new Router<Req>();
     keyValueRouter.use(handleError('key-value'));
+
+    // #region key value
 
     const storeRouter = new Router<Req>();
     storeRouter.use(handleError('key-value-store'));
@@ -136,10 +137,10 @@ export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest
 
     router.use('/key-value', keyValueRouter);
 
-    // #region graphql
-
     const dynamicRouter = new Router<Req>();
     dynamicRouter.use(handleError('dynamic'));
+
+    // #region graphql
 
     const tablesRouter = new Router<Req>();
     tablesRouter.use(handleError('dynamic-tables'));
@@ -183,9 +184,9 @@ export class TinyDbApi<Req extends TinyContextualRequest = TinyContextualRequest
       return new Response(JSON.stringify(result, null, 2), { status: 200, headers: { 'Content-Type': data.contentType } });
     });
 
-    router.use('/dynamic', dynamicRouter);
-
     // #endregion graphql
+
+    router.use('/dynamic', dynamicRouter);
 
     return router;
   }
